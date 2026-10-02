@@ -13,6 +13,8 @@ pnpm test
 paseo plugin install /absolute/path/to/theme-creator
 ```
 
+`pnpm install` also records this directory in `server/export-assets.ts`, which component builds and pack exports use. Run it again if you move the project. Install from the same directory you ran it in.
+
 Open **Theme Studio** in the sidebar. Choose **Theme Studio · Live** in **Settings → Appearance** once to use the active pack's palette across Paseo.
 
 ## Design and activate a pack

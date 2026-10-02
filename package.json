@@ -16,7 +16,7 @@
     "build:export": "node scripts/build-export-assets.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,mjs,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json}\"",
-    "postinstall": "node scripts/ensure-generated-registry.mjs"
+    "postinstall": "node scripts/ensure-generated-registry.mjs && node scripts/build-export-assets.mjs"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.9.2",
