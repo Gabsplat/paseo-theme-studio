@@ -762,3 +762,21 @@ test("unbound and archived owners surface unavailable delivery while preserving 
   await controller.drain();
   assert.equal(sendRequests.length, 1);
 });
+
+test("a publication whose chat row cannot be appended leaves no orphaned instance", async t => {
+  const { controller, service, paseo, publish } = await fixture(t);
+  const ref = paseo.agents.ref.bind(paseo.agents);
+  (paseo.agents as { ref: typeof ref }).ref = (owner: string) => {
+    const agent = ref(owner);
+    agent.timeline.append = async () => {
+      throw new Error("Timeline unavailable");
+    };
+    return agent;
+  };
+  await assert.rejects(publish(), /Timeline unavailable/);
+  assert.equal((await service.read()).instances.length, 0);
+  (paseo.agents as { ref: typeof ref }).ref = ref;
+  controller.bind(paseo);
+  assert.ok(await publish());
+  assert.equal((await service.read()).instances.length, 1);
+});

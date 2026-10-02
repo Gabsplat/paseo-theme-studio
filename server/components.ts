@@ -464,6 +464,13 @@ export class ComponentService {
     });
     return { library, ...result };
   }
+  /** Removes one unpublished instance. Used when its chat row could not be appended. */
+  async removeInstance(instanceId: string) {
+    await this.mutate(null, library => {
+      library.instances = library.instances.filter(instance => instance.id !== instanceId);
+      return null;
+    });
+  }
   /** Removes instances owned by agents that no longer exist; their conversations are gone. */
   async removeAgentInstances(agentIds: readonly string[]) {
     if (!agentIds.length) return 0;

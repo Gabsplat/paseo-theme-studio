@@ -45,6 +45,7 @@ export interface ComponentControllerService {
     state: ComponentState;
   }): Promise<ComponentInstance>;
   markDispatched(input: { instanceId: string; eventId: string }): Promise<ComponentInstance>;
+  removeInstance(instanceId: string): Promise<void>;
 }
 
 export type PublishComponentInput = {
@@ -144,13 +145,19 @@ export class ComponentController {
       componentId: created.instance.componentId,
       componentVersion: created.instance.componentVersion,
     });
-    await agent.timeline.append({
-      type: "plugin",
-      id: created.instance.id,
-      kind: "studio-component",
-      version: 1,
-      data,
-    });
+    try {
+      await agent.timeline.append({
+        type: "plugin",
+        id: created.instance.id,
+        kind: "studio-component",
+        version: 1,
+        data,
+      });
+    } catch (error) {
+      // Without its chat row the instance is unreachable; remove it so a retry starts clean.
+      await this.service.removeInstance(created.instance.id).catch(() => {});
+      throw error;
+    }
     return created;
   }
 
