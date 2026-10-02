@@ -20,12 +20,15 @@ import { pruneMissingAgents } from "./server/maintenance";
 import { cliPath, resolvePaseoCli } from "./server/paseo-cli";
 import { readAgentConnection, changeAgentConnection, readAgentMcpSetup } from "./shared/agent-connection";
 import * as components from "./shared/component-rpc";
+import { changeStudioPreferences, readStudioPreferences } from "./shared/preferences";
+import { PreferencesStore } from "./server/preferences";
 import { z } from "zod";
 
 export default function contribute(server: PluginServerContext) {
   const directory = join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "theme-studio");
   const store = new StudioStore(directory);
   const connection = new AgentConnectionStore(directory);
+  const preferences = new PreferencesStore(directory);
   const owners = new AgentOwners(directory);
   const componentService = new ComponentService(directory);
   const controller = new ComponentController(componentService, store);
@@ -131,6 +134,8 @@ export default function contribute(server: PluginServerContext) {
     bind(context);
     return store.read();
   });
+  server.handle(readStudioPreferences, () => preferences.read());
+  server.handle(changeStudioPreferences, input => preferences.change(input));
   server.handle(readAgentConnection, () => connection.read());
   server.handle(changeAgentConnection, input =>
     connection.change(input.expectedRevision, input.enabled, input.automaticTriggers),
@@ -256,6 +261,7 @@ export default function contribute(server: PluginServerContext) {
     removeSessionHook();
     removeTurnHook();
     await connection.close();
+    await preferences.close();
     await controller.close();
     await componentService.close();
     await designer.close();
