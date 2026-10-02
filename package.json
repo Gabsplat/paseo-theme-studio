@@ -4,10 +4,8 @@
   "version": "0.5.0",
   "files": [
     "paseo-plugin.json",
-    "index.client.ts",
     "index.client.tsx",
     "index.server.ts",
-    "index.server.tsx",
     "client/",
     "server/",
     "shared/"
@@ -28,5 +26,6 @@
     "tsx": "^4.20.0",
     "typescript": "^5.9.3",
     "zod": "^4.4.3"
-  }
+  },
+  "packageManager": "pnpm@12.5.1"
 }

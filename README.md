@@ -1,6 +1,6 @@
 # Paseo Theme Studio
 
-Theme Studio 0.3.0 is a trusted local Paseo plugin for designing UI packs and reusable native components with a real agent chat. A pack combines an appearance palette, styles for plugin components, tool cards, and workspace panels. The component library stores compositions and generated React Native code that can appear in agent timelines. It uses public plugin APIs and requires no Paseo core changes.
+Theme Studio 0.5.0 is a trusted local Paseo plugin for designing UI packs and reusable native components with a real agent chat. A pack combines an appearance palette, styles for plugin components, tool cards, and workspace panels. The component library stores compositions and generated React Native code that can appear in agent timelines. It uses public plugin APIs and requires no Paseo core changes.
 
 ## Install
 
