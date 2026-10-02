@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { z } from "zod";
 import { makeBridgeSource } from "./bridge-source";
 import { contrastReport } from "./contrast";
-import { StudioStore } from "./store";
+import { RevisionConflict, StudioStore } from "./store";
+import { ComponentRevisionConflict } from "./components";
 import {
   capabilities,
   codeGenerationTools,
@@ -23,6 +24,22 @@ import {
 export type ComponentCall = (name: string, input: unknown, caller: string | undefined) => Promise<unknown>;
 export const callerHeader = "x-theme-studio-caller";
 const agentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+class RequestTooLarge extends Error {
+  constructor() {
+    super("Theme request exceeded its limit.");
+  }
+}
+
+/** Maps a tool failure to an HTTP status so conflicts, bad input, and faults stay distinguishable. */
+export function bridgeErrorStatus(error: unknown): number {
+  if (error instanceof RequestTooLarge) return 413;
+  if (error instanceof RevisionConflict || error instanceof ComponentRevisionConflict) return 409;
+  if (error instanceof z.ZodError || error instanceof SyntaxError) return 400;
+  // Other errors are deliberate rejections with a user-facing message, such as a locked color.
+  if (error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError) return 500;
+  return error instanceof Error ? 422 : 500;
+}
 
 export class ThemeBridge {
   readonly script: string;
@@ -85,15 +102,17 @@ export class ThemeBridge {
       let body = "";
       for await (const chunk of request) {
         body += chunk.toString();
-        if (body.length > 1000000) throw new Error("Theme request exceeded its limit.");
+        if (body.length > 1000000) throw new RequestTooLarge();
       }
       const input = z.object({ name: z.string(), arguments: z.unknown() }).strict().parse(JSON.parse(body));
       const header = request.headers[callerHeader];
       const caller = typeof header === "string" && agentIdPattern.test(header) ? header : undefined;
       send(200, await this.call(input.name, input.arguments, caller));
     } catch (error) {
+      const status = bridgeErrorStatus(error);
+      if (status === 500) console.error("Theme Studio tool failed:", error);
       if (!response.destroyed && !response.headersSent)
-        send(400, { error: error instanceof Error ? error.message : "Theme tool failed." });
+        send(status, { error: error instanceof Error ? error.message : "Theme tool failed." });
     }
   }
   async call(name: string, input: unknown, caller?: string): Promise<unknown> {
@@ -135,8 +154,8 @@ export class ThemeBridge {
         if (component) {
           if (Object.keys(patch.colors).length || patch.ui || patch.name || patch.appearance || patch.label)
             throw new Error("Use a separate call for component operations and pack edits.");
-          if ((await this.store.read()).revision !== expectedRevision)
-            throw new Error("Studio changed elsewhere. Read read_theme and retry.");
+          const { revision } = await this.store.read();
+          if (revision !== expectedRevision) throw new RevisionConflict(revision);
           if (!this.componentCall) throw new Error("Component service is unavailable.");
           // The compatibility route inherits patch_theme's approval, so it must not bypass
           // the permission prompt that general agents get for code generation.

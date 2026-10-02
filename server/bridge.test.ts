@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
-import { ThemeBridge } from "./bridge";
-import { StudioStore } from "./store";
+import { z } from "zod";
+import { bridgeErrorStatus, ThemeBridge } from "./bridge";
+import { ComponentRevisionConflict } from "./components";
+import { RevisionConflict, StudioStore } from "./store";
 
 async function ownerBridge(
   t: { after(callback: () => Promise<void>): void },
@@ -372,7 +374,7 @@ test("existing patch_theme permissions can route component tools without allowin
   await assert.rejects(
     bridge.call("patch_theme", { ...args, component: { tool: "activate_component_build", arguments: {} } }),
   );
-  await assert.rejects(bridge.call("patch_theme", { ...args, expectedRevision: 999 }), /Read read_theme/);
+  await assert.rejects(bridge.call("patch_theme", { ...args, expectedRevision: 999 }), RevisionConflict);
   assert.equal(calls.length, 1);
   assert.equal(await readFile(store.file, "utf8"), before);
 });
@@ -528,4 +530,13 @@ test("the patch_theme compatibility route cannot bypass approval for code genera
     await assert.rejects(bridge.call("patch_theme", input), /directly so the user can approve/);
     assert.deepEqual(await bridge.call("patch_theme", input, designer), { forwarded: tool });
   }
+});
+
+test("bridge failures map to distinct HTTP statuses", () => {
+  assert.equal(bridgeErrorStatus(new RevisionConflict(3)), 409);
+  assert.equal(bridgeErrorStatus(new ComponentRevisionConflict(3)), 409);
+  assert.equal(bridgeErrorStatus(new SyntaxError("bad json")), 400);
+  assert.equal(bridgeErrorStatus(z.object({ a: z.string() }).safeParse({}).error), 400);
+  assert.equal(bridgeErrorStatus(new Error("accent is locked.")), 422);
+  assert.equal(bridgeErrorStatus(new TypeError("undefined is not a function")), 500);
 });
