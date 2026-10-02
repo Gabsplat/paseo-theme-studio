@@ -38,13 +38,17 @@ async function withSessionOwner(name, args) {
   if ((name === "patch_theme" || name === "patch_pack") && args.component && (args.component.tool === "publish_component" || args.component.tool === "trigger_component")) return { ...args, component: { ...args.component, arguments: await withSessionOwner(args.component.tool, args.component.arguments) } };
   return args;
 }
+async function callerId() {
+  try { return await readOwner(); } catch { return undefined; }
+}
 async function callBackend(name, args, signal) {
   const endpoint = JSON.parse(await readFile(endpointFile, "utf8"));
   if (!Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65535 || typeof endpoint.token !== "string") throw new Error("Theme Studio is unavailable. Reopen or reload the plugin.");
   const body = JSON.stringify({ name, arguments: await withSessionOwner(name, args) });
+  const caller = await callerId();
   if (signal?.aborted) throw new Error("Theme Studio startup discovery timed out.");
   return new Promise((resolve, reject) => {
-    const request = http.request({ hostname: "127.0.0.1", port: endpoint.port, method: "POST", path: "/tool", headers: { authorization: "Bearer " + endpoint.token, "content-type": "application/json", "content-length": Buffer.byteLength(body) }, timeout: 60000, ...(signal ? { signal } : {}) }, response => {
+    const request = http.request({ hostname: "127.0.0.1", port: endpoint.port, method: "POST", path: "/tool", headers: { authorization: "Bearer " + endpoint.token, "content-type": "application/json", "content-length": Buffer.byteLength(body), ...(caller ? { "x-theme-studio-caller": caller } : {}) }, timeout: 60000, ...(signal ? { signal } : {}) }, response => {
       let result = "";
       response.setEncoding("utf8");
       response.on("data", chunk => { result += chunk; if (result.length > 2000000) { response.destroy(); reject(new Error("Theme response exceeded its limit.")); } });

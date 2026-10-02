@@ -18,6 +18,11 @@ import {
   variantSchema,
 } from "./capabilities";
 
+/** `caller` is the Paseo agent ID that the MCP bridge process is bound to, when known. */
+export type ComponentCall = (name: string, input: unknown, caller: string | undefined) => Promise<unknown>;
+export const callerHeader = "x-theme-studio-caller";
+const agentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export class ThemeBridge {
   readonly script: string;
   readonly endpoint: string;
@@ -26,7 +31,7 @@ export class ThemeBridge {
   private readonly token = randomBytes(32).toString("hex");
   constructor(
     private readonly store: StudioStore,
-    private readonly componentCall?: (name: string, input: unknown) => Promise<unknown>,
+    private readonly componentCall?: ComponentCall,
   ) {
     this.script = join(store.directory, "theme-mcp.cjs");
     this.endpoint = join(store.directory, "bridge.json");
@@ -82,13 +87,15 @@ export class ThemeBridge {
         if (body.length > 1000000) throw new Error("Theme request exceeded its limit.");
       }
       const input = z.object({ name: z.string(), arguments: z.unknown() }).strict().parse(JSON.parse(body));
-      send(200, await this.call(input.name, input.arguments));
+      const header = request.headers[callerHeader];
+      const caller = typeof header === "string" && agentIdPattern.test(header) ? header : undefined;
+      send(200, await this.call(input.name, input.arguments, caller));
     } catch (error) {
       if (!response.destroyed && !response.headersSent)
         send(400, { error: error instanceof Error ? error.message : "Theme tool failed." });
     }
   }
-  async call(name: string, input: unknown): Promise<unknown> {
+  async call(name: string, input: unknown, caller?: string): Promise<unknown> {
     switch (name) {
       case "read_theme":
         z.object({}).strict().parse(input);
@@ -130,7 +137,7 @@ export class ThemeBridge {
           if ((await this.store.read()).revision !== expectedRevision)
             throw new Error("Studio changed elsewhere. Read read_theme and retry.");
           if (!this.componentCall) throw new Error("Component service is unavailable.");
-          return this.componentCall(component.tool, component.arguments);
+          return this.componentCall(component.tool, component.arguments, caller);
         }
         return this.store.change(expectedRevision, { type: "patch", ...patch }, "agent");
       }
@@ -193,7 +200,7 @@ export class ThemeBridge {
             "favorite_component",
           ].includes(name)
         )
-          return this.componentCall(name, input);
+          return this.componentCall(name, input, caller);
         throw new Error("Unknown theme tool.");
     }
   }

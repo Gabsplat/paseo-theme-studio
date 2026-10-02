@@ -16,9 +16,9 @@ async function ownerBridge(
 ) {
   const directory = await mkdtemp(join(tmpdir(), "theme-bridge-owner-test-"));
   const store = new StudioStore(directory);
-  const calls: Array<{ name: string; input: unknown }> = [];
-  const bridge = new ThemeBridge(store, async (name, input) => {
-    calls.push({ name, input });
+  const calls: Array<{ name: string; input: unknown; caller?: string }> = [];
+  const bridge = new ThemeBridge(store, async (name, input, caller) => {
+    calls.push({ name, input, ...(caller ? { caller } : {}) });
     return componentCall ? componentCall(name, input) : input;
   });
   const document = await store.read();
@@ -252,6 +252,10 @@ test("real MCP stdio uses a persisted public-hook owner binding without provider
   await writeFile(ownerFile!, JSON.stringify({ agentId: alternate }));
   assert.match(String(await call("publish_component", args, true)), /owner context changed/);
   assert.equal(calls.length, 2, "Changed binding must not redirect publication to another native conversation.");
+  assert.ok(
+    calls.every(call => call.caller === owner),
+    "Every backend call identifies the bound agent so the server can authorize its target.",
+  );
   assert.deepEqual(await call("publish_component", { ...args, agentId: owner }), { ...args, agentId: owner });
 });
 
@@ -343,9 +347,9 @@ test("real MCP stdio without valid owner context refuses implicit publication an
 test("existing patch_theme permissions can route component tools without allowing activation or mixed pack edits", async t => {
   const directory = await mkdtemp(join(tmpdir(), "theme-compat-test-"));
   const store = new StudioStore(directory);
-  const calls: Array<{ name: string; input: unknown }> = [];
-  const bridge = new ThemeBridge(store, async (name, input) => {
-    calls.push({ name, input });
+  const calls: Array<{ name: string; input: unknown; caller?: string }> = [];
+  const bridge = new ThemeBridge(store, async (name, input, caller) => {
+    calls.push({ name, input, ...(caller ? { caller } : {}) });
     return { instance: { revision: 7 } };
   });
   t.after(async () => {

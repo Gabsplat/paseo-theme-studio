@@ -100,6 +100,8 @@ Paseo 0.9.2 does not expose a public per-agent MCP update for existing conversat
 
 New general-agent and designer MCP arguments contain a private owner-binding file. For general agents, the public session-open hook records the real agent ID before its first provider launch. The designer binds its reserved native ID during creation. The binding survives later reloads without depending on inherited MCP environment variables. If no verified owner is available, MCP publication requires an explicit target ID. It never silently falls back to another conversation.
 
+Each MCP request also identifies the calling agent. Through MCP, an agent can publish, trigger, or update components only in its own conversation; the designer session can also target other conversations on the user's behalf. A bridge without a verified caller, such as one started before an upgrade, is refused until the agent is reloaded.
+
 Component state and events persist on the daemon. A component emits `onAction({ action, value, patch })`; the backend records the event and routes it to that instance's owning native agent. Action names are data. The backend has no domain mapping from an action name to a shell command, API call, or business operation.
 
 1. Input changes use `onAction({ action: "__state__", patch: { field: value } })` to persist state without sending a model prompt.

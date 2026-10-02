@@ -15,6 +15,7 @@ import { connectAgent } from "./server/agent-integration";
 import { AgentConnectionStore } from "./server/agent-connection";
 import { AgentOwners, ownerTokenEnvironment } from "./server/agent-owners";
 import { componentTriggerCatalog } from "./server/component-triggers";
+import { assertComponentTarget } from "./server/component-access";
 import { readAgentConnection, changeAgentConnection, readAgentMcpSetup } from "./shared/agent-connection";
 import * as components from "./shared/component-rpc";
 import { z } from "zod";
@@ -27,7 +28,8 @@ export default function contribute(server: PluginServerContext) {
   const componentService = new ComponentService(directory);
   const controller = new ComponentController(componentService, store);
   const bind = (context: PluginHandlerContext) => controller.bind(context.paseo);
-  const bridge = new ThemeBridge(store, async (name, input) => {
+  const designerId = async () => (await store.read()).designerAgentId;
+  const bridge = new ThemeBridge(store, async (name, input, caller) => {
     switch (name) {
       case "list_component_triggers": {
         z.object({}).strict().parse(input);
@@ -40,6 +42,7 @@ export default function contribute(server: PluginServerContext) {
             "Automatic component triggers are disabled by the installer. Manual publication remains available.",
           );
         if (!value.agentId) throw new Error("Specify target agentId; owner context unavailable.");
+        assertComponentTarget(caller, value.agentId, await designerId());
         return controller.trigger({ ...value, agentId: value.agentId });
       }
       case "list_components":
@@ -53,10 +56,19 @@ export default function contribute(server: PluginServerContext) {
         return componentService.createCode(components.componentCodeSchema.parse(input));
       case "build_components":
         return componentService.build(components.buildComponents.input.parse(input));
-      case "publish_component":
-        return (await controller.publish(components.componentPublishSchema.parse(input))).instance;
-      case "update_component_state":
-        return controller.updateState(components.componentUpdateSchema.parse(input));
+      case "publish_component": {
+        const value = components.componentPublishSchema.parse(input);
+        const designerAgentId = await designerId();
+        const target = value.agentId ?? designerAgentId;
+        if (target) assertComponentTarget(caller, target, designerAgentId);
+        return (await controller.publish(value)).instance;
+      }
+      case "update_component_state": {
+        const value = components.componentUpdateSchema.parse(input);
+        const instance = await componentService.readInstance(value.instanceId);
+        assertComponentTarget(caller, instance.agentId, await designerId());
+        return controller.updateState(value);
+      }
       case "favorite_component": {
         const value = components.favoriteComponent.input.parse(input);
         return componentService.setFavorite({
