@@ -93,14 +93,31 @@ export default function contribute(server: PluginServerContext) {
     }
     if (!enabled) return;
     bind(context);
-    await bridge.ensure();
+    try {
+      await bridge.ensure();
+    } catch (error) {
+      console.error(
+        "Theme Studio bridge is unavailable. Creating the agent without its tools:",
+        error instanceof Error ? error.message : "unknown error",
+      );
+      return;
+    }
     return connectAgent(request, bridge, process.execPath, owners.allocate());
   });
   const removeSessionHook = server.before("agent.session_open", async ({ request }, context) => {
     bind(context);
-    await bridge.ensure();
-    if (request.reason === "create" && request.purpose === "interactive")
-      await owners.bind(request.env[ownerTokenEnvironment], request.agentId);
+    // Theme Studio must never prevent an agent session from opening. Without a binding
+    // the agent simply cannot publish components until it is reloaded.
+    try {
+      await bridge.ensure();
+      if (request.reason === "create" && request.purpose === "interactive")
+        await owners.bind(request.env[ownerTokenEnvironment], request.agentId);
+    } catch (error) {
+      console.error(
+        "Theme Studio could not prepare the agent session:",
+        error instanceof Error ? error.message : "unknown error",
+      );
+    }
   });
   const exporter = new PackExporter(store);
   // Existing persistent agents can reconnect their tools after a plugin reload.
