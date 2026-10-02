@@ -1,8 +1,9 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
-import { copyText, Icon, TextInput } from "@getpaseo/plugin/client/react-native";
-import { useEffect, useState } from "react";
+import { copyText, Icon } from "@getpaseo/plugin/client/react-native";
+import { SettingsSelect } from "@getpaseo/plugin/client/ui";
+import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { defaultDesignerModel, defaultDesignerProvider } from "../shared/designer";
 import type { StudioPreferences } from "../shared/preferences";
@@ -142,8 +143,25 @@ export function DesignerInspector({
   onNewSession: () => void;
 }) {
   const next = nextDesignerConfig(preferences);
-  const [model, setModel] = useState(preferences?.designerModel ?? "");
-  useEffect(() => setModel(preferences?.designerModel ?? ""), [preferences?.designerModel]);
+  const models = useQuery({
+    queryKey: ["theme-studio-designer-models", next.provider],
+    enabled: Boolean(paseo),
+    queryFn: async () => {
+      const result = await paseo!.providers.listModels(next.provider);
+      if (result.error) throw new Error(result.error);
+      return (result.models ?? []).filter(model => model.isSelectable !== false);
+    },
+    staleTime: 60_000,
+  });
+  const modelOptions = [
+    { value: "", label: "Provider default" },
+    ...(models.data ?? []).map(model => ({
+      value: model.id,
+      label: model.label,
+    })),
+  ];
+  if (preferences?.designerModel && !modelOptions.some(option => option.value === preferences.designerModel))
+    modelOptions.push({ value: preferences.designerModel, label: preferences.designerModel });
   const [copied, setCopied] = useState<number | null>(null);
   const c = theme.colors;
   return (
@@ -180,47 +198,28 @@ export function DesignerInspector({
             : "Pick the provider and model, then start. Creating the designer sends no prompt."
         }
       >
-        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-          {providers.map(item => (
-            <StudioButton
-              key={item.id}
-              theme={theme}
-              title={item.label}
-              small
-              active={next.provider === item.id}
-              onPress={() => onSavePreferences({ designerProvider: item.id, designerModel: "" })}
-            />
-          ))}
-        </View>
-        <View style={{ gap: 4 }}>
-          <StudioLabel theme={theme} subdued>
-            Model
-          </StudioLabel>
-          <TextInput
-            accessibilityLabel="Designer model"
-            value={model}
-            onChangeText={setModel}
-            onEndEditing={() => onSavePreferences({ designerModel: model.trim() })}
-            onBlur={() => onSavePreferences({ designerModel: model.trim() })}
-            placeholder={defaultDesignerModel(next.provider)}
-            placeholderTextColor={c.foregroundMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={{
-              borderWidth: 1,
-              borderColor: c.border,
-              borderRadius: 8,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              color: c.foreground,
-              fontSize: 12,
-              backgroundColor: c.surface0,
-            }}
-          />
-          <StudioLabel theme={theme} subdued>
-            Leave it empty to use {defaultDesignerModel(next.provider)}.
-          </StudioLabel>
-        </View>
+        <SettingsSelect
+          label="Provider"
+          value={next.provider}
+          options={providers.map(provider => ({ value: provider.id, label: provider.label }))}
+          disabled={busy}
+          onValueChange={provider => onSavePreferences({ designerProvider: provider, designerModel: "" })}
+        />
+        <SettingsSelect
+          label="Model"
+          value={preferences?.designerModel ?? ""}
+          options={modelOptions}
+          disabled={busy || models.isLoading || !paseo}
+          onValueChange={model => onSavePreferences({ designerModel: model })}
+        />
+        {models.error ? (
+          <View style={{ gap: 6 }}>
+            <Text accessibilityRole="alert" style={{ color: c.statusDanger, fontSize: 12 }}>
+              Could not load models. {models.error.message}
+            </Text>
+            <StudioButton theme={theme} title="Retry models" small onPress={() => void models.refetch()} />
+          </View>
+        ) : null}
         <StudioButton
           theme={theme}
           title={busy ? "Starting…" : agentId ? "Start new session" : "Start designer"}
