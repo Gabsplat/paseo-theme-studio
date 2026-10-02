@@ -1,0 +1,8 @@
+Paseo Theme Studio
+
+Includes a React Native preview adapted from the visual structure and theme mappings of Paseo:
+https://github.com/getpaseo/paseo
+Source reference: v0.9.2
+
+Paseo is licensed under the Apache License, Version 2.0.
+The preview and integration are local modifications and are not an official Paseo product.

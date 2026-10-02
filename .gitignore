@@ -1,0 +1,4 @@
+node_modules/
+.paseo/
+output/
+*.log

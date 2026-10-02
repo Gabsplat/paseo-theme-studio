@@ -1,0 +1,7 @@
+{
+  "id": "theme-studio",
+  "description": "Design Paseo themes with a live preview and a companion agent.",
+  "requirements": {
+    "paseo": ">=0.9.2 <0.11.0"
+  }
+}

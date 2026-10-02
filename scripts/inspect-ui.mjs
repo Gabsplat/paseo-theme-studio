@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({headless:true,executablePath:'/home/gabsplat/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome',args:['--no-sandbox']});
+const page = await browser.newPage({viewport:{width:1920,height:1080}});
+const errors=[];
+page.on('pageerror',error=>errors.push(error.message));
+page.on('console',message=>{if(message.type()==='error') errors.push(message.text());});
+await page.goto('http://127.0.0.1:6767/h/srv_T1b7PG6C2vvD/plugin/theme-studio/surface/studio');
+await page.waitForTimeout(2200);
+await page.getByText('Theme Studio', {exact:true}).first().click();
+await page.waitForTimeout(2500);
+await page.screenshot({path:'output/theme-studio-wide.png'});
+console.log(JSON.stringify({url:page.url(),studio:await page.getByText('Shape your palette in the designer').count(),errors,content:(await page.locator('[data-testid="theme-studio"]').count())?await page.getByTestId('theme-studio').innerText():'studio testID pending'},null,2));
+await browser.close();
