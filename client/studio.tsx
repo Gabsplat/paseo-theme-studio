@@ -1,9 +1,9 @@
 import type { PluginAgentPanelProps, PluginSurfaceProps, PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { useAgent, useRpc } from "@getpaseo/plugin/client";
+import { useRpc } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { copyText, Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { changeStudio, exportPack, readStudio, startDesigner } from "../shared/rpc";
 import { defaultDesignerModel, defaultDesignerProvider } from "../shared/designer";
@@ -19,134 +19,43 @@ import {
   type StudioDocument,
   type StudioTheme,
 } from "../shared/theme";
-import { contrastRatio } from "../shared/color";
 import { contrastReport } from "../shared/contrast";
-import { PaseoPreview } from "./preview";
+import { PaseoPreview, type PreviewScene, type PreviewTimelineItem } from "./preview";
 import { PaletteInspector } from "./studio-inspector";
 import { PackDesignInspector } from "./studio-design";
-import { PackNote, PackToolCard, RecipePanel } from "./pack-runtime";
 import { previewPluginTheme } from "./preview-colors";
-import { StudioButton, StudioCard, StudioLabel } from "./studio-ui";
+import { InspectorSections, StudioButton, StudioCard, StudioLabel, StudioSegments } from "./studio-ui";
 import { ComponentLibrarySurface } from "./component-library";
+import { ComponentInspector, latestDefinitions, useComponentLibrary } from "./component-inspector";
+import { ComponentCard } from "./component-runtime";
+import type { ComponentState } from "../shared/components";
+import { changeStudioPreferences, readStudioPreferences } from "../shared/preferences";
 
 export type StudioProps = (PluginSurfaceProps | PluginWorkspacePanelProps | PluginAgentPanelProps) & {
   onOpenPreview?: (workspaceId: string, agentId: string) => void | Promise<void>;
   onOpenPack?: (workspaceId: string, agentId?: string) => void | Promise<void>;
+  /** Opens the full Theme Studio surface, leaving the designer chat. */
+  onOpenStudio?: () => void;
+  /** Reopen the designer chat when the user left it open. Only the sidebar surface does this. */
+  autoOpenDesigner?: boolean;
 };
-type Tab = "preview" | "colors" | "design" | "components" | "presets" | "history";
-type Scene = "chat" | "changes" | "terminal";
+type StudioMode = "studio" | "library";
+type Inspector = "colors" | "design" | "components" | "packs" | "history";
 type Dialog = "save" | "import" | "export" | "settings" | null;
+type StudioView = {
+  view: StudioMode;
+  inspector: Inspector;
+  scene: PreviewScene;
+  component: string | null;
+  filterFavorites: boolean;
+};
 export const studioQueryKey = ["theme-studio-document"] as const;
-const studioViews = new Map<string, { tab: Tab; scene: Scene; filterFavorites?: boolean }>();
-
-const tabs: { id: Tab; title: string; icon: string }[] = [
-  { id: "preview", title: "Preview", icon: "PanelsTopLeft" },
-  { id: "colors", title: "Colors", icon: "SlidersHorizontal" },
-  { id: "design", title: "Design", icon: "LayoutTemplate" },
-  { id: "components", title: "Components", icon: "Blocks" },
-  { id: "presets", title: "Presets", icon: "Palette" },
-  { id: "history", title: "History", icon: "History" },
-];
+const preferencesQueryKey = ["theme-studio-preferences"] as const;
+// Remembers each host and workspace's view while Paseo keeps this plugin loaded.
+const studioViews = new Map<string, StudioView>();
 
 function messageFor(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function DesignerStatus({ theme, agentId }: { theme: PluginTheme; agentId: string }) {
-  const state = useAgent(agentId, agent => ({ status: agent.status, attention: agent.requiresAttention }));
-  const label = !state
-    ? "Session available"
-    : state.attention
-      ? "Needs your attention"
-      : state.status === "running"
-        ? "Designer working"
-        : state.status === "idle"
-          ? "Ready for your next change"
-          : state.status === "closed"
-            ? "Session closed"
-            : state.status === "error"
-              ? "Designer needs attention"
-              : "Starting designer";
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-      <View
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 3,
-          backgroundColor:
-            state?.status === "error" || state?.attention ? theme.colors.statusWarning : theme.colors.statusSuccess,
-        }}
-      />
-      <StudioLabel theme={theme} subdued>
-        {label}
-      </StudioLabel>
-    </View>
-  );
-}
-
-function PaletteStrip({
-  theme,
-  document,
-  onSelect,
-}: {
-  theme: PluginTheme;
-  document: StudioDocument;
-  onSelect: () => void;
-}) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 18, padding: 15 }}
-      style={{
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        borderRadius: 10,
-        backgroundColor: theme.colors.surface1,
-        flexGrow: 0,
-      }}
-    >
-      {colorKeys.map(key => (
-        <Pressable
-          key={key}
-          accessibilityRole="button"
-          accessibilityLabel={`Inspect ${colorLabels[key]} ${document.current.colors[key]}`}
-          onPress={onSelect}
-          style={{ gap: 7, minWidth: 69 }}
-        >
-          <View
-            style={{
-              height: 32,
-              width: 32,
-              borderWidth: 1,
-              borderColor: theme.colors.border,
-              borderRadius: 7,
-              backgroundColor: document.current.colors[key],
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {document.locks.includes(key) ? (
-              <Icon
-                name="LockKeyhole"
-                size={12}
-                color={
-                  contrastRatio(document.current.colors.foreground, document.current.colors[key]) >= 3
-                    ? document.current.colors.foreground
-                    : document.current.colors.background
-                }
-              />
-            ) : null}
-          </View>
-          <Text style={{ color: theme.colors.foreground, fontSize: 11 }}>{colorLabels[key]}</Text>
-          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>
-            {document.current.colors[key].toUpperCase()}
-          </Text>
-        </Pressable>
-      ))}
-    </ScrollView>
-  );
 }
 
 function ThemeTile({
@@ -171,7 +80,7 @@ function ThemeTile({
   return (
     <View
       style={{
-        width: 190,
+        width: 150,
         flexGrow: 1,
         maxWidth: 330,
         borderRadius: 10,
@@ -206,9 +115,9 @@ function ThemeTile({
             <View
               key={index}
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 14,
+                width: 22,
+                height: 22,
+                borderRadius: 11,
                 backgroundColor: color,
                 borderWidth: 1,
                 borderColor: theme.colors.border,
@@ -276,22 +185,37 @@ export function ThemeStudio(props: StudioProps) {
   const change = useRpc(changeStudio);
   const start = useRpc(startDesigner);
   const exportFiles = useRpc(exportPack);
-  const [tab, setTabState] = useState<Tab>(() => studioViews.get(viewKey)?.tab ?? "preview");
-  const [scene, setSceneState] = useState<Scene>(() => studioViews.get(viewKey)?.scene ?? "chat");
-  function setTab(next: Tab) {
-    studioViews.set(viewKey, { ...studioViews.get(viewKey), tab: next, scene });
-    setTabState(next);
+  const readPreferences = useRpc(readStudioPreferences);
+  const changePreferences = useRpc(changeStudioPreferences);
+  const saved = studioViews.get(viewKey);
+  const [view, setViewState] = useState<StudioMode>(saved?.view ?? "studio");
+  const [inspector, setInspectorState] = useState<Inspector>(saved?.inspector ?? "colors");
+  const [scene, setSceneState] = useState<PreviewScene>(saved?.scene ?? "chat");
+  const [selectedComponent, setSelectedComponentState] = useState<string | null>(saved?.component ?? null);
+  const [filterFavorites, setFilterFavoritesState] = useState(saved?.filterFavorites ?? false);
+  function remember(next: Partial<StudioView>) {
+    studioViews.set(viewKey, {
+      view,
+      inspector,
+      scene,
+      component: selectedComponent,
+      filterFavorites,
+      ...studioViews.get(viewKey),
+      ...next,
+    });
   }
-  function setScene(next: Scene) {
-    studioViews.set(viewKey, { ...studioViews.get(viewKey), tab, scene: next });
-    setSceneState(next);
+  const setView = (next: StudioMode) => (remember({ view: next }), setViewState(next));
+  const setInspector = (next: Inspector) => (remember({ inspector: next }), setInspectorState(next));
+  const setScene = (next: PreviewScene) => (remember({ scene: next }), setSceneState(next));
+  const setFilterFavorites = (next: boolean) => (remember({ filterFavorites: next }), setFilterFavoritesState(next));
+  const [componentState, setComponentState] = useState<ComponentState>({});
+  function selectComponent(id: string | null) {
+    remember({ component: id });
+    setSelectedComponentState(id);
+    setComponentState({});
+    if (id) setScene("chat");
   }
-  const [filterFavorites, setFilterFavoritesState] = useState(() => studioViews.get(viewKey)?.filterFavorites ?? false);
-  function setFilterFavorites(next: boolean) {
-    studioViews.set(viewKey, { tab, scene, filterFavorites: next });
-    setFilterFavoritesState(next);
-  }
-  const [width, setWidth] = useState(0);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const [dialog, setDialog] = useState<Dialog>(null);
   const [saveName, setSaveName] = useState("");
   const [json, setJson] = useState("");
@@ -301,7 +225,8 @@ export function ThemeStudio(props: StudioProps) {
   const [model, setModel] = useState(() => defaultDesignerModel(defaultDesignerProvider));
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const compact = layout.compact || (width > 0 && width < 820);
+  // Beside a chat, or on small screens, the inspector moves below the preview.
+  const stacked = layout.compact || (size.width > 0 && size.width < 980);
   const query = useQuery({
     queryKey: studioQueryKey,
     queryFn: async () => {
@@ -313,6 +238,8 @@ export function ThemeStudio(props: StudioProps) {
     retry: 1,
   });
   const document = query.data;
+  const preferences = useQuery({ queryKey: preferencesQueryKey, queryFn: () => readPreferences({}) });
+  const components = useComponentLibrary();
 
   const update = useMutation({
     mutationFn: change,
@@ -327,6 +254,10 @@ export function ThemeStudio(props: StudioProps) {
     },
   });
 
+  async function rememberDesigner(open: boolean) {
+    queryClient.setQueryData(preferencesQueryKey, await changePreferences({ designerOpen: open }));
+  }
+
   const designer = useMutation({
     mutationFn: start,
     onSuccess: async result => {
@@ -334,7 +265,7 @@ export function ThemeStudio(props: StudioProps) {
       try {
         props.navigation?.openAgent({ agentId: result.agentId, serverId: props.host.id });
         await props.onOpenPreview?.(result.workspaceId, result.agentId);
-        setNotice("The designer chat is open. Describe your changes there; this preview follows its edits.");
+        await rememberDesigner(true);
       } catch (reason) {
         setError(
           `The designer is ready, but opening the preview failed. ${messageFor(reason)} Open Theme Studio from the workspace's panels.`,
@@ -349,6 +280,15 @@ export function ThemeStudio(props: StudioProps) {
     onError: reason => setError(messageFor(reason)),
     onSuccess: () => setError(null),
   });
+
+  // Theme Studio reopens the designer chat if the user left it open last time.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current || !props.autoOpenDesigner || inPanel || !props.navigation) return;
+    if (!preferences.data || !document) return;
+    restored.current = true;
+    if (preferences.data.designerOpen && document.designerAgentId) openDesigner();
+  }, [preferences.data, document?.designerAgentId]);
 
   async function apply(action: StudioAction, expectedRevision = document?.revision) {
     if (expectedRevision === undefined) throw new Error("Wait for the studio to finish loading.");
@@ -371,7 +311,7 @@ export function ThemeStudio(props: StudioProps) {
     try {
       await apply({ type: "activate" });
       setNotice(
-        "Pack activated. Its extensions are enabled. Select Theme Studio · Live in Settings → Appearance once to use the pack's colors.",
+        "Pack activated. Select Theme Studio · Live in Settings → Appearance once to use its colors across Paseo.",
       );
     } catch {
       /* The mutation reports its error. */
@@ -381,6 +321,14 @@ export function ThemeStudio(props: StudioProps) {
   function openDesigner() {
     setError(null);
     designer.mutate({ workspaceId, provider: provider.trim() || undefined, model: model.trim() || undefined });
+  }
+  async function closeDesigner() {
+    try {
+      await rememberDesigner(false);
+      props.onOpenStudio?.();
+    } catch (reason) {
+      setError(messageFor(reason));
+    }
   }
 
   function openDialog(next: Dialog) {
@@ -405,7 +353,7 @@ export function ThemeStudio(props: StudioProps) {
     try {
       await apply({ type: "save", name: saveName.trim() });
       setDialog(null);
-      setNotice("Pack saved to your library. Activate pack applies the draft to Paseo.");
+      setNotice("Pack saved to your library.");
     } catch {
       /* The mutation reports its error. */
     }
@@ -429,16 +377,13 @@ export function ThemeStudio(props: StudioProps) {
     try {
       await apply({ type: "import", theme: parsed.data });
       setDialog(null);
-      setNotice("Pack imported into the draft. Locked colors were preserved. Activate it when ready.");
+      setNotice("Pack imported into the draft. Locked colors were preserved.");
     } catch {
       /* The mutation reports its error. */
     }
   }
 
   const busy = update.isPending || exporter.isPending;
-  const dirty = document ? JSON.stringify(document.current) !== JSON.stringify(document.baseline) : false;
-  const savedToLibrary =
-    document?.saved.some(saved => JSON.stringify(saved) === JSON.stringify(document.current)) ?? false;
   const libraryPacks =
     document?.saved.filter(candidate => !filterFavorites || document.favorites.includes(candidate.id)) ?? [];
   const packChanges = document ? describePackChanges(document.current, document.active) : [];
@@ -448,6 +393,8 @@ export function ThemeStudio(props: StudioProps) {
   const activePanelEnabled = Boolean(
     document?.active && (document.active.ui.activityPanel || document.active.ui.panel.enabled),
   );
+  const besideDesigner =
+    inPanel && Boolean(document?.designerWorkspaceId) && workspaceId === document?.designerWorkspaceId;
   async function openPackPanel() {
     if (!packWorkspaceId || !props.onOpenPack) return;
     const agentId =
@@ -468,725 +415,520 @@ export function ThemeStudio(props: StudioProps) {
     color: theme.colors.foreground,
     fontSize: 13,
   };
+  const c = theme.colors;
 
-  const preview = document ? (
-    <View style={{ gap: 12, flex: 1, minWidth: 0 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-          <Icon name="Monitor" size={14} color={theme.colors.foregroundMuted} />
-          <StudioLabel theme={theme} subdued>
-            Draft preview
-          </StudioLabel>
-        </View>
-        <View style={{ flexDirection: "row", gap: 5 }}>
-          {(["chat", "changes", "terminal"] as Scene[]).map(item => (
-            <StudioButton
-              key={item}
-              theme={theme}
-              title={item === "chat" ? "Agent" : item === "changes" ? "Changes" : "Terminal"}
-              small
-              active={scene === item}
-              onPress={() => setScene(item)}
-            />
-          ))}
-        </View>
-      </View>
-      <PaseoPreview theme={document.current} compact={compact} scene={scene} />
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <View style={{ flexDirection: "row", gap: 7, alignItems: "center" }}>
-          <View
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: draftMatchesActive ? theme.colors.statusSuccess : theme.colors.statusWarning,
-            }}
-          />
-          <StudioLabel theme={theme}>{document.current.name}</StudioLabel>
-          <StudioLabel theme={theme} subdued>
-            · {savedToLibrary ? "Saved to library" : dirty ? "Edited draft" : "Draft pack"}
-          </StudioLabel>
-        </View>
-        <StudioLabel theme={theme} subdued>
-          Workspace text{" "}
-          {contrastReport(document.current.colors, document.current.appearance)
-            .checks.find(
-              check =>
-                check.foreground === "foreground" &&
-                check.background === (document.current.appearance === "dark" ? "raised" : "background"),
-            )!
-            .ratio.toFixed(1)}
-          :1
-        </StudioLabel>
-      </View>
-      <PaletteStrip theme={theme} document={document} onSelect={() => setTab("colors")} />
-    </View>
-  ) : null;
+  const previewDefinition = latestDefinitions(components.library).find(item => item.id === selectedComponent);
+  const previewItems: PreviewTimelineItem[] =
+    previewDefinition && document
+      ? [
+          {
+            key: `${previewDefinition.id}@${previewDefinition.version}`,
+            node: (
+              <ComponentCard
+                theme={draftTheme}
+                definition={previewDefinition}
+                state={componentState}
+                onAction={action => {
+                  if (action.patch) setComponentState(previous => ({ ...previous, ...action.patch }));
+                }}
+                feedback="Preview · actions stay local"
+              />
+            ),
+          },
+        ]
+      : [];
 
-  return (
+  const textRatio = document
+    ? contrastReport(document.current.colors, document.current.appearance)
+        .checks.find(
+          check =>
+            check.foreground === "foreground" &&
+            check.background === (document.current.appearance === "dark" ? "raised" : "background"),
+        )!
+        .ratio.toFixed(1)
+    : null;
+
+  const designerButton = besideDesigner ? (
+    <StudioButton
+      theme={theme}
+      title="Close designer"
+      icon="PanelLeftClose"
+      small
+      onPress={() => void closeDesigner()}
+    />
+  ) : (
+    <StudioButton
+      theme={theme}
+      title={designer.isPending ? "Opening…" : document?.designerAgentId ? "Designer" : "Start designer"}
+      icon="MessageSquare"
+      small
+      active={Boolean(preferences.data?.designerOpen && document?.designerAgentId)}
+      disabled={!document || designer.isPending || !props.navigation}
+      onPress={openDesigner}
+    />
+  );
+
+  const topBar = (
     <View
-      testID="theme-studio"
-      onLayout={event => setWidth(event.nativeEvent.layout.width)}
-      style={{ flex: 1, minHeight: 0, backgroundColor: theme.colors.surface0 }}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+        paddingHorizontal: inPanel ? 12 : 16,
+        paddingVertical: 9,
+        borderBottomWidth: 1,
+        borderColor: c.border,
+      }}
     >
-      <View
-        style={{
-          paddingHorizontal: inPanel ? 12 : compact ? 16 : 24,
-          paddingTop: inPanel ? 10 : compact ? 16 : 21,
-          paddingBottom: inPanel ? 10 : 16,
-          gap: inPanel ? 7 : 13,
-          borderBottomWidth: 1,
-          borderColor: theme.colors.border,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: inPanel ? 8 : 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <View style={{ flexDirection: "row", gap: 11, alignItems: "center", flexShrink: 1, maxWidth: "100%" }}>
-            {!inPanel ? (
-              <View style={{ padding: 9, borderRadius: 10, backgroundColor: theme.colors.surface2 }}>
-                <Icon name="Palette" size={20} color={theme.colors.accent} />
-              </View>
-            ) : null}
-            <View style={{ gap: 3, flexShrink: 1 }}>
-              <Text style={{ color: theme.colors.foreground, fontWeight: "600", fontSize: inPanel ? 16 : 19 }}>
-                Theme Studio
-              </Text>
-              {!inPanel ? (
-                <StudioLabel theme={theme} subdued>
-                  Create themes and UI packs in the designer's Paseo chat.
-                </StudioLabel>
-              ) : null}
-            </View>
-          </View>
-          <View style={{ flexDirection: "row", gap: inPanel ? 5 : 7, alignItems: "center", flexWrap: "wrap" }}>
-            <StudioButton
-              theme={theme}
-              title="Undo"
-              icon="Undo2"
-              small
-              iconOnly={inPanel}
-              disabled={!document || busy || document.cursor === 0}
-              onPress={() => dispatch({ type: "undo" })}
-            />
-            <StudioButton
-              theme={theme}
-              title="Redo"
-              icon="Redo2"
-              small
-              iconOnly={inPanel}
-              disabled={!document || busy || document.cursor >= document.history.length - 1}
-              onPress={() => dispatch({ type: "redo" })}
-            />
-            <StudioButton
-              theme={theme}
-              title="Save pack"
-              icon="Save"
-              small={inPanel}
-              iconOnly={inPanel}
-              disabled={!document || busy}
-              onPress={() => openDialog("save")}
-            />
-            {!inPanel ? (
-              <StudioButton
-                theme={theme}
-                title={draftMatchesActive ? "Pack active" : "Activate pack"}
-                icon="Check"
-                primary
-                disabled={!document || busy || draftMatchesActive}
-                onPress={() => {
-                  void activatePack();
-                }}
-              />
-            ) : null}
-          </View>
-        </View>
-        {inPanel ? (
-          document?.designerAgentId ? (
-            <DesignerStatus theme={theme} agentId={document.designerAgentId} />
-          ) : (
-            <View style={{ flexDirection: "row", gap: 7 }}>
-              <StudioButton
-                theme={theme}
-                title={designer.isPending ? "Starting…" : "Start designer"}
-                icon="ArrowUpRight"
-                small
-                disabled={!document || designer.isPending || !props.navigation}
-                onPress={() => {
-                  void openDesigner();
-                }}
-              />
-              <StudioButton theme={theme} title="Model" icon="Settings2" small onPress={() => openDialog("settings")} />
-            </View>
-          )
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
+        {view === "library" ? (
+          <StudioButton theme={theme} title="Back to studio" icon="ArrowLeft" small onPress={() => setView("studio")} />
         ) : (
-          <View
-            style={{
-              flexDirection: "row",
-              gap: 10,
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-            }}
-          >
-            <View style={{ gap: 4, flex: 1, minWidth: 170 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-                <Icon name="Bot" size={14} color={theme.colors.foregroundMuted} />
-                <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600" }}>Pack designer</Text>
-              </View>
-              {document?.designerAgentId ? (
-                workspaceId ? (
-                  <DesignerStatus theme={theme} agentId={document.designerAgentId} />
-                ) : (
-                  <StudioLabel theme={theme} subdued>
-                    Session saved. Open the designer chat to continue.
-                  </StudioLabel>
-                )
-              ) : (
-                <StudioLabel theme={theme} subdued>
-                  Start a real agent session to design this theme and UI pack.
-                </StudioLabel>
-              )}
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-              <StudioButton theme={theme} title="Model" icon="Settings2" small onPress={() => openDialog("settings")} />
-              <StudioButton
-                theme={theme}
-                title={
-                  designer.isPending ? "Starting…" : document?.designerAgentId ? "Open designer chat" : "Start designer"
-                }
-                icon="ArrowUpRight"
-                small
-                disabled={!document || designer.isPending || !props.navigation}
-                onPress={() => {
-                  void openDesigner();
-                }}
-              />
-            </View>
-          </View>
+          <Icon name="Palette" size={15} color={c.foregroundMuted} />
         )}
-        {inPanel ? (
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flex: 1 }}>
+        {view === "library" ? (
+          <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 13 }}>
+            Component library
+          </Text>
+        ) : null}
+        {document && view === "studio" ? (
+          <>
+            <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, fontWeight: "600", flexShrink: 1 }}>
+              {document.current.name}
+            </Text>
+            <View
+              accessibilityLabel={draftMatchesActive ? "Draft is active" : "Draft has changes that are not active"}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 5,
+                paddingHorizontal: 7,
+                paddingVertical: 2,
+                borderRadius: 10,
+                backgroundColor: c.surface1,
+              }}
+            >
               <View
                 style={{
-                  height: 6,
                   width: 6,
+                  height: 6,
                   borderRadius: 3,
-                  backgroundColor: document?.active ? theme.colors.statusSuccess : theme.colors.foregroundMuted,
+                  backgroundColor: draftMatchesActive ? c.statusSuccess : c.statusWarning,
                 }}
               />
-              <Text numberOfLines={1} style={{ color: theme.colors.foregroundMuted, fontSize: 11, flexShrink: 1 }}>
-                {document?.active ? `Active · ${document.active.name}` : "No active pack"}
+              <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                {draftMatchesActive ? "Active" : document.active ? "Not active yet" : "No active pack"}
               </Text>
             </View>
-            <StudioButton
-              theme={theme}
-              title={draftMatchesActive ? "Pack active" : "Activate pack"}
-              icon="Check"
-              primary
-              small
-              disabled={!document || busy || draftMatchesActive}
-              onPress={() => {
-                void activatePack();
+          </>
+        ) : null}
+      </View>
+      {view === "studio" ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+          <StudioButton
+            theme={theme}
+            title="Undo"
+            icon="Undo2"
+            small
+            iconOnly
+            disabled={!document || busy || document.cursor === 0}
+            onPress={() => dispatch({ type: "undo" })}
+          />
+          <StudioButton
+            theme={theme}
+            title="Redo"
+            icon="Redo2"
+            small
+            iconOnly
+            disabled={!document || busy || document.cursor >= document.history.length - 1}
+            onPress={() => dispatch({ type: "redo" })}
+          />
+          <StudioButton
+            theme={theme}
+            title={document?.current.appearance === "light" ? "Switch to dark" : "Switch to light"}
+            icon={document?.current.appearance === "light" ? "Sun" : "Moon"}
+            small
+            iconOnly
+            disabled={!document || busy}
+            onPress={() =>
+              document &&
+              dispatch({
+                type: "patch",
+                colors: {},
+                appearance: document.current.appearance === "dark" ? "light" : "dark",
+                label: "Change appearance",
+              })
+            }
+          />
+          <StudioButton
+            theme={theme}
+            title="Save pack"
+            icon="Save"
+            small
+            iconOnly={stacked}
+            disabled={!document || busy}
+            onPress={() => openDialog("save")}
+          />
+          {designerButton}
+          <StudioButton
+            theme={theme}
+            title={draftMatchesActive ? "Active" : "Activate"}
+            icon="Check"
+            primary
+            small
+            disabled={!document || busy || draftMatchesActive}
+            onPress={() => void activatePack()}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const banner =
+    error || query.error || notice ? (
+      <View
+        accessibilityRole={error || query.error ? "alert" : undefined}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+          borderBottomWidth: 1,
+          borderColor: c.border,
+          backgroundColor: c.surface1,
+        }}
+      >
+        <Icon
+          name={error || query.error ? "TriangleAlert" : "CircleCheck"}
+          size={14}
+          color={error || query.error ? c.statusDanger : c.statusSuccess}
+        />
+        <Text
+          selectable
+          style={{ flex: 1, color: error || query.error ? c.statusDanger : c.foreground, fontSize: 12, lineHeight: 18 }}
+        >
+          {error ?? (query.error ? messageFor(query.error) : notice)}
+        </Text>
+        {query.error ? (
+          <StudioButton theme={theme} title="Retry" icon="RefreshCw" small onPress={() => void query.refetch()} />
+        ) : null}
+        <StudioButton
+          theme={theme}
+          title="Dismiss"
+          icon="X"
+          small
+          iconOnly
+          onPress={() => {
+            setError(null);
+            setNotice(null);
+          }}
+        />
+      </View>
+    ) : null;
+
+  const canvas = document ? (
+    <View style={{ flex: 1, minWidth: 0, minHeight: 0, padding: stacked ? 10 : 16, gap: 10 }}>
+      <PaseoPreview
+        theme={document.current}
+        compact={layout.compact}
+        scene={scene}
+        onSceneChange={setScene}
+        items={previewItems}
+      />
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Edit colors"
+          onPress={() => setInspector("colors")}
+          style={{ flexDirection: "row", gap: 4 }}
+        >
+          {colorKeys.map(key => (
+            <View
+              key={key}
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 4,
+                borderWidth: 1,
+                borderColor: c.border,
+                backgroundColor: document.current.colors[key],
               }}
             />
-          </View>
-        ) : null}
+          ))}
+        </Pressable>
+        <View style={{ flex: 1 }} />
+        <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
+          Text {textRatio}:1 · {busy ? "Saving…" : query.error ? "Reconnecting" : "Draft synced"}
+        </Text>
+      </View>
+    </View>
+  ) : (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }}>
+      <Icon name="Palette" size={28} color={c.foregroundMuted} />
+      <StudioLabel theme={theme} subdued>
+        {query.isPending ? "Loading your pack…" : "The pack is unavailable. Refresh to reconnect."}
+      </StudioLabel>
+    </View>
+  );
+
+  const inspectorBody = document ? (
+    <InspectorSections.Provider value={true}>
+      {inspector === "colors" ? (
+        <View style={{ paddingVertical: 14 }}>
+          <PaletteInspector
+            theme={theme}
+            document={document}
+            busy={busy}
+            onCommit={commitColor}
+            onLock={(key, locked) => dispatch({ type: "lock", key, locked })}
+          />
+        </View>
+      ) : null}
+      {inspector === "design" ? (
+        <PackDesignInspector theme={theme} document={document} busy={busy} onPatch={patchUi} />
+      ) : null}
+      {inspector === "components" ? (
+        <ComponentInspector
+          theme={theme}
+          selectedId={selectedComponent}
+          onSelect={selectComponent}
+          onOpenLibrary={() => setView("library")}
+          onResetPreview={() => setComponentState({})}
+        />
+      ) : null}
+      {inspector === "packs" ? (
+        <>
+          <StudioCard
+            theme={theme}
+            title="Active pack"
+            description={document.active ? document.active.name : "No pack is active."}
+          >
+            <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+              <StudioButton
+                theme={theme}
+                title="Revert"
+                icon="Undo2"
+                small
+                disabled={busy || !document.previousActive}
+                onPress={() => dispatch({ type: "revert-active" })}
+              />
+              <StudioButton
+                theme={theme}
+                title="Disable"
+                icon="Power"
+                small
+                disabled={busy || !document.active}
+                onPress={() => dispatch({ type: "disable-pack" })}
+              />
+              {activePanelEnabled && props.onOpenPack ? (
+                <StudioButton
+                  theme={theme}
+                  title="Open panel"
+                  icon="PanelRightOpen"
+                  small
+                  disabled={busy || !packWorkspaceId}
+                  onPress={() => void openPackPanel()}
+                />
+              ) : null}
+            </View>
+            {packChanges.length ? (
+              <StudioLabel theme={theme} subdued>
+                Activating updates {packChanges.join(", ").toLowerCase()}.
+              </StudioLabel>
+            ) : null}
+          </StudioCard>
+          <StudioCard
+            theme={theme}
+            title="Starting packs"
+            description="Load a preset into the draft. Locked colors stay."
+          >
+            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+              {presets.map(candidate => (
+                <ThemeTile
+                  key={candidate.id}
+                  theme={theme}
+                  candidate={candidate}
+                  selected={document.current.id === candidate.id}
+                  disabled={busy}
+                  onPress={() => dispatch({ type: "preset", id: candidate.id })}
+                />
+              ))}
+            </View>
+          </StudioCard>
+          <StudioCard theme={theme} title="Your library" description="Saved packs live on this Paseo host.">
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <StudioButton
+                theme={theme}
+                title="Favorites only"
+                icon="Star"
+                small
+                active={filterFavorites}
+                onPress={() => setFilterFavorites(!filterFavorites)}
+              />
+              <StudioLabel theme={theme} subdued>
+                {libraryPacks.length} {libraryPacks.length === 1 ? "pack" : "packs"}
+              </StudioLabel>
+            </View>
+            {libraryPacks.length ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {libraryPacks.map(candidate => (
+                  <ThemeTile
+                    key={candidate.id}
+                    theme={theme}
+                    candidate={candidate}
+                    selected={document.current.id === candidate.id}
+                    disabled={busy}
+                    favorite={document.favorites.includes(candidate.id)}
+                    onFavorite={() =>
+                      dispatch({
+                        type: document.favorites.includes(candidate.id) ? "unfavorite" : "favorite",
+                        id: candidate.id,
+                      })
+                    }
+                    onPress={() => dispatch({ type: "load", id: candidate.id })}
+                    onDelete={() => dispatch({ type: "delete", id: candidate.id })}
+                  />
+                ))}
+              </View>
+            ) : (
+              <StudioLabel theme={theme} subdued>
+                {filterFavorites
+                  ? "No favorite packs yet."
+                  : "Your library is empty. Save this pack to keep a version."}
+              </StudioLabel>
+            )}
+          </StudioCard>
+          <StudioCard
+            theme={theme}
+            title="Share"
+            description="Copy the pack as JSON, import one, or export a standalone plugin."
+          >
+            <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+              <StudioButton
+                theme={theme}
+                title="Import"
+                icon="Upload"
+                small
+                disabled={busy}
+                onPress={() => openDialog("import")}
+              />
+              <StudioButton theme={theme} title="Export" icon="Download" small onPress={() => openDialog("export")} />
+            </View>
+          </StudioCard>
+        </>
+      ) : null}
+      {inspector === "history" ? (
+        <View style={{ paddingVertical: 14, gap: 2 }}>
+          <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600", marginBottom: 6 }}>Draft history</Text>
+          {[...document.history].reverse().map((entry, reverseIndex) => {
+            const index = document.history.length - reverseIndex - 1;
+            const current = index === document.cursor;
+            return (
+              <View
+                key={`${entry.at}-${index}`}
+                style={{
+                  paddingVertical: 8,
+                  paddingHorizontal: 8,
+                  marginHorizontal: -8,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                  borderRadius: 8,
+                  backgroundColor: current ? c.surface2 : "transparent",
+                  opacity: index > document.cursor ? 0.5 : 1,
+                }}
+              >
+                <Icon
+                  name={entry.source === "agent" ? "Bot" : entry.source === "preset" ? "Palette" : "Pencil"}
+                  size={14}
+                  color={current ? c.accent : c.foregroundMuted}
+                />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: c.foreground, fontSize: 12, fontWeight: current ? "600" : "400" }}
+                  >
+                    {entry.label}
+                  </Text>
+                  <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                    {entry.source === "agent"
+                      ? "Designer"
+                      : entry.source === "preset"
+                        ? "Preset"
+                        : entry.source === "manual"
+                          ? "You"
+                          : "Studio"}{" "}
+                    · {new Date(entry.at).toLocaleTimeString()}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+    </InspectorSections.Provider>
+  ) : null;
+
+  const inspectorPane = (
+    <View
+      style={
+        stacked
+          ? { borderTopWidth: 1, borderColor: c.border, flex: 1, minHeight: 0 }
+          : { width: 360, borderLeftWidth: 1, borderColor: c.border, minHeight: 0 }
+      }
+    >
+      <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 }}>
+        <StudioSegments
+          theme={theme}
+          value={inspector}
+          onChange={setInspector}
+          options={[
+            { value: "colors", label: "Colors" },
+            { value: "design", label: "Design" },
+            { value: "components", label: "Components" },
+            { value: "packs", label: "Packs" },
+            { value: "history", label: "History" },
+          ]}
+        />
+      </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+      >
+        {inspectorBody}
         {!props.navigation ? (
           <StudioLabel theme={theme} subdued>
             Update the Paseo app to open the designer chat from this studio.
           </StudioLabel>
         ) : null}
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0, borderBottomWidth: 1, borderColor: theme.colors.border }}
-        contentContainerStyle={{ paddingHorizontal: inPanel ? 12 : compact ? 16 : 24, gap: compact ? 10 : 24 }}
-      >
-        {tabs.map(item => (
-          <Pressable
-            key={item.id}
-            accessibilityRole="button"
-            accessibilityLabel={item.title}
-            accessibilityState={{ selected: tab === item.id }}
-            onPress={() => setTab(item.id)}
-            style={{
-              paddingVertical: inPanel ? 11 : 14,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: compact ? 4 : 7,
-              borderBottomWidth: 2,
-              borderColor: tab === item.id ? theme.colors.accent : "transparent",
-            }}
-          >
-            {!compact ? (
-              <Icon
-                name={item.icon}
-                size={14}
-                color={tab === item.id ? theme.colors.foreground : theme.colors.foregroundMuted}
-              />
-            ) : null}
-            <Text
-              style={{
-                color: tab === item.id ? theme.colors.foreground : theme.colors.foregroundMuted,
-                fontSize: compact ? 12 : 13,
-                fontWeight: tab === item.id ? "600" : "400",
-              }}
-            >
-              {item.title}
-            </Text>
-          </Pressable>
-        ))}
       </ScrollView>
+    </View>
+  );
 
-      {tab === "components" ? (
+  return (
+    <View
+      testID="theme-studio"
+      onLayout={event => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
+      style={{ flex: 1, minHeight: 0, backgroundColor: c.surface0 }}
+    >
+      {topBar}
+      {banner}
+      {view === "library" ? (
         <ComponentLibrarySurface {...props} />
+      ) : stacked ? (
+        <View style={{ flex: 1, minHeight: 0 }}>
+          {/* Keep the preview large enough to read; the inspector scrolls below it. */}
+          <View style={{ height: Math.max(340, Math.round(size.height * 0.56)) }}>{canvas}</View>
+          {inspectorPane}
+        </View>
       ) : (
-        <ScrollView
-          style={{ flex: 1 }}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ padding: compact ? 16 : 24, gap: 17 }}
-        >
-          {error || query.error ? (
-            <View
-              accessibilityRole="alert"
-              style={{
-                padding: 13,
-                gap: 10,
-                borderRadius: 9,
-                borderWidth: 1,
-                borderColor: theme.colors.statusDanger,
-                backgroundColor: theme.colors.surface1,
-              }}
-            >
-              <Text selectable style={{ color: theme.colors.statusDanger, fontSize: 12, lineHeight: 18 }}>
-                {error ?? messageFor(query.error)}
-              </Text>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <StudioButton
-                  theme={theme}
-                  title="Refresh"
-                  icon="RefreshCw"
-                  small
-                  onPress={() => {
-                    setError(null);
-                    void query.refetch();
-                  }}
-                />
-                {error ? <StudioButton theme={theme} title="Dismiss" small onPress={() => setError(null)} /> : null}
-              </View>
-            </View>
-          ) : null}
-          {notice ? (
-            <View
-              style={{
-                padding: 12,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                borderRadius: 9,
-                flexDirection: "row",
-                gap: 8,
-              }}
-            >
-              <Icon name="CircleCheck" size={15} color={theme.colors.statusSuccess} />
-              <Text style={{ flex: 1, color: theme.colors.foreground, fontSize: 12, lineHeight: 18 }}>{notice}</Text>
-            </View>
-          ) : null}
-          {!document ? (
-            <View style={{ paddingVertical: 60, alignItems: "center", gap: 12 }}>
-              <Icon name="Palette" size={28} color={theme.colors.foregroundMuted} />
-              <StudioLabel theme={theme} subdued>
-                {query.isPending ? "Loading your pack…" : "The pack is unavailable. Refresh to reconnect."}
-              </StudioLabel>
-            </View>
-          ) : (
-            <>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <View style={{ flexDirection: "row", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
-                  <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "500" }}>
-                    {document.current.name}
-                  </Text>
-                  <StudioButton
-                    theme={theme}
-                    small
-                    title={document.current.appearance === "dark" ? "Dark" : "Light"}
-                    icon={document.current.appearance === "dark" ? "Moon" : "Sun"}
-                    disabled={busy}
-                    onPress={() =>
-                      dispatch({
-                        type: "patch",
-                        colors: {},
-                        appearance: document.current.appearance === "dark" ? "light" : "dark",
-                        label: "Change appearance",
-                      })
-                    }
-                  />
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <View
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: query.error ? theme.colors.statusWarning : theme.colors.statusSuccess,
-                    }}
-                  />
-                  <StudioLabel theme={theme} subdued>
-                    {busy ? "Saving edit" : query.error ? "Reconnecting" : "Draft synced"} · r{document.revision}
-                  </StudioLabel>
-                  <StudioButton
-                    theme={theme}
-                    title="Import"
-                    icon="Upload"
-                    small
-                    disabled={busy}
-                    onPress={() => openDialog("import")}
-                  />
-                  <StudioButton
-                    theme={theme}
-                    title="Export"
-                    icon="Download"
-                    small
-                    onPress={() => openDialog("export")}
-                  />
-                </View>
-              </View>
-              <View
-                style={{
-                  padding: 12,
-                  borderRadius: 9,
-                  borderWidth: 1,
-                  borderColor: theme.colors.border,
-                  backgroundColor: theme.colors.surface1,
-                  gap: 6,
-                }}
-              >
-                <View style={{ flexDirection: "row", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
-                  <Icon
-                    name={draftMatchesActive ? "CircleCheck" : "Layers"}
-                    size={14}
-                    color={draftMatchesActive ? theme.colors.statusSuccess : theme.colors.foregroundMuted}
-                  />
-                  <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "500" }}>
-                    {draftMatchesActive ? "Draft matches the active pack" : "Draft preview only"}
-                  </Text>
-                  {!inPanel ? (
-                    <StudioLabel theme={theme} subdued>
-                      {document.active ? `Active · ${document.active.name}` : "No active pack"}
-                    </StudioLabel>
-                  ) : null}
-                </View>
-                {packChanges.length ? (
-                  <StudioLabel theme={theme} subdued>
-                    Activate to update {packChanges.join(", ").toLowerCase()}.
-                  </StudioLabel>
-                ) : null}
-                {tab === "design" ? (
-                  <View style={{ flexDirection: "row", gap: 7, flexWrap: "wrap", paddingTop: 3 }}>
-                    <StudioButton
-                      theme={theme}
-                      title="Revert pack"
-                      icon="Undo2"
-                      small
-                      disabled={busy || !document.previousActive}
-                      onPress={() => dispatch({ type: "revert-active" })}
-                    />
-                    <StudioButton
-                      theme={theme}
-                      title="Disable pack"
-                      icon="Power"
-                      small
-                      disabled={busy || !document.active}
-                      onPress={() => dispatch({ type: "disable-pack" })}
-                    />
-                    {activePanelEnabled && props.onOpenPack ? (
-                      <StudioButton
-                        theme={theme}
-                        title="Open pack panel"
-                        icon="PanelRightOpen"
-                        small
-                        disabled={busy || !packWorkspaceId}
-                        onPress={() => {
-                          void openPackPanel();
-                        }}
-                      />
-                    ) : null}
-                  </View>
-                ) : null}
-                {tab === "design" && activePanelEnabled && !packWorkspaceId ? (
-                  <StudioLabel theme={theme} subdued>
-                    Open a workspace or start the designer to view the pack panel.
-                  </StudioLabel>
-                ) : null}
-              </View>
-              {tab === "preview" ? preview : null}
-              {tab === "colors" ? (
-                <View style={{ flexDirection: compact ? "column" : "row", gap: 22, alignItems: "stretch" }}>
-                  {!compact ? preview : null}
-                  <View
-                    style={{
-                      width: compact ? "100%" : 340,
-                      padding: 16,
-                      borderWidth: 1,
-                      borderColor: theme.colors.border,
-                      borderRadius: 12,
-                      backgroundColor: theme.colors.surface1,
-                    }}
-                  >
-                    <PaletteInspector
-                      theme={theme}
-                      document={document}
-                      busy={busy}
-                      onCommit={commitColor}
-                      onLock={(key, locked) => dispatch({ type: "lock", key, locked })}
-                    />
-                  </View>
-                  {compact ? preview : null}
-                </View>
-              ) : null}
-              {tab === "design" ? (
-                <View style={{ flexDirection: compact ? "column" : "row", gap: 22, alignItems: "flex-start" }}>
-                  {compact ? (
-                    <View style={{ width: "100%" }}>
-                      <PackDesignInspector theme={theme} document={document} busy={busy} onPatch={patchUi} />
-                    </View>
-                  ) : null}
-                  <View
-                    style={{ flex: compact ? undefined : 1, width: compact ? "100%" : undefined, minWidth: 0, gap: 17 }}
-                  >
-                    {preview}
-                    <StudioCard
-                      theme={theme}
-                      title="Draft extensions"
-                      description="These pack-owned components use your typography, spacing, and card styles."
-                    >
-                      <View
-                        style={{ padding: 13, backgroundColor: draftTheme.colors.surface0, borderRadius: 10, gap: 14 }}
-                      >
-                        <PackNote
-                          theme={draftTheme}
-                          pack={document.current}
-                          text="A note from your pack. Keep the workspace focused and readable."
-                        />
-                        {document.current.ui.toolCards !== "native" ? (
-                          <PackToolCard
-                            theme={draftTheme}
-                            pack={document.current}
-                            data={{
-                              label: "npm run check",
-                              kind: "shell",
-                              command: "npm run check",
-                              output: "All checks passed.",
-                              exitCode: 0,
-                            }}
-                            initiallyExpanded
-                          />
-                        ) : (
-                          <StudioLabel theme={theme} subdued>
-                            Completed shell tools keep Paseo's native cards.
-                          </StudioLabel>
-                        )}
-                        {document.current.ui.panel.enabled ? (
-                          <RecipePanel theme={draftTheme} pack={document.current} />
-                        ) : null}
-                      </View>
-                    </StudioCard>
-                  </View>
-                  {!compact ? (
-                    <View style={{ width: 360 }}>
-                      <PackDesignInspector theme={theme} document={document} busy={busy} onPatch={patchUi} />
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-              {tab === "presets" ? (
-                <>
-                  <StudioCard
-                    theme={theme}
-                    title="Starting packs"
-                    description="Load a draft, then ask the designer for palette and UI changes. Locked colors stay in place."
-                  >
-                    <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
-                      {presets.map(candidate => (
-                        <ThemeTile
-                          key={candidate.id}
-                          theme={theme}
-                          candidate={candidate}
-                          selected={document.current.id === candidate.id}
-                          disabled={busy}
-                          onPress={() => dispatch({ type: "preset", id: candidate.id })}
-                        />
-                      ))}
-                    </View>
-                  </StudioCard>
-                  <StudioCard
-                    theme={theme}
-                    title="Your library"
-                    description="Saved theme and UI packs live on this Paseo host."
-                  >
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <StudioButton
-                        theme={theme}
-                        title="Favorites only"
-                        icon="Star"
-                        small
-                        active={filterFavorites}
-                        onPress={() => setFilterFavorites(!filterFavorites)}
-                      />
-                      <StudioLabel theme={theme} subdued>
-                        {libraryPacks.length} {libraryPacks.length === 1 ? "pack" : "packs"}
-                      </StudioLabel>
-                    </View>
-                    {libraryPacks.length ? (
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                        {libraryPacks.map(candidate => (
-                          <ThemeTile
-                            key={candidate.id}
-                            theme={theme}
-                            candidate={candidate}
-                            selected={document.current.id === candidate.id}
-                            disabled={busy}
-                            favorite={document.favorites.includes(candidate.id)}
-                            onFavorite={() =>
-                              dispatch({
-                                type: document.favorites.includes(candidate.id) ? "unfavorite" : "favorite",
-                                id: candidate.id,
-                              })
-                            }
-                            onPress={() => dispatch({ type: "load", id: candidate.id })}
-                            onDelete={() => dispatch({ type: "delete", id: candidate.id })}
-                          />
-                        ))}
-                      </View>
-                    ) : (
-                      <StudioLabel theme={theme} subdued>
-                        {filterFavorites
-                          ? "No favorite packs yet. Show all packs and star the ones you want to keep handy."
-                          : "Your library is empty. Save this pack to keep a named version."}
-                      </StudioLabel>
-                    )}
-                    <StudioLabel theme={theme} subdued>
-                      Load any saved pack into the draft, then activate it when ready.
-                    </StudioLabel>
-                  </StudioCard>
-                </>
-              ) : null}
-              {tab === "history" ? (
-                <StudioCard
-                  theme={theme}
-                  title="Draft history"
-                  description="Undo and redo move through draft edits. Activation stays separate; locked colors remain protected."
-                >
-                  {[...document.history].reverse().map((entry, reverseIndex) => {
-                    const index = document.history.length - reverseIndex - 1;
-                    const current = index === document.cursor;
-                    return (
-                      <View
-                        key={`${entry.at}-${index}`}
-                        style={{
-                          paddingVertical: 10,
-                          flexDirection: "row",
-                          gap: 12,
-                          borderBottomWidth: 1,
-                          borderColor: theme.colors.border,
-                          opacity: index > document.cursor ? 0.5 : 1,
-                        }}
-                      >
-                        <View
-                          style={{
-                            height: 28,
-                            width: 28,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: theme.colors.surface2,
-                            borderRadius: 8,
-                          }}
-                        >
-                          <Icon
-                            name={entry.source === "agent" ? "Bot" : entry.source === "preset" ? "Palette" : "Pencil"}
-                            size={14}
-                            color={current ? theme.colors.accent : theme.colors.foregroundMuted}
-                          />
-                        </View>
-                        <View style={{ flex: 1, gap: 3 }}>
-                          <Text
-                            style={{
-                              color: theme.colors.foreground,
-                              fontSize: 13,
-                              fontWeight: current ? "600" : "400",
-                            }}
-                          >
-                            {entry.label}
-                          </Text>
-                          <StudioLabel theme={theme} subdued>
-                            {entry.source === "agent"
-                              ? "Designer"
-                              : entry.source === "preset"
-                                ? "Preset"
-                                : entry.source === "manual"
-                                  ? "You"
-                                  : "Studio"}{" "}
-                            · {new Date(entry.at).toLocaleTimeString()} · {entry.theme.name}
-                          </StudioLabel>
-                        </View>
-                        {current ? <StudioLabel theme={theme}>Current</StudioLabel> : null}
-                      </View>
-                    );
-                  })}
-                </StudioCard>
-              ) : null}
-              <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start" }}>
-                <Icon name="Info" size={14} color={theme.colors.foregroundMuted} />
-                <Text style={{ flex: 1, color: theme.colors.foregroundMuted, fontSize: 11, lineHeight: 17 }}>
-                  Activate applies the draft pack. Select Theme Studio · Live in Settings → Appearance once for its
-                  colors. UI styles apply to pack-owned timeline extensions and panels. Change global fonts in Settings
-                  → Appearance → Fonts.
-                </Text>
-              </View>
-            </>
-          )}
-        </ScrollView>
+        <View style={{ flex: 1, minHeight: 0, flexDirection: "row" }}>
+          {canvas}
+          {inspectorPane}
+        </View>
       )}
 
       <Modal

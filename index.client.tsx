@@ -122,11 +122,23 @@ export default function contribute(client: PluginClientContext) {
   function openPack(workspaceId: string, agentId?: string) {
     client.openPanel("pack-panel", { workspaceId, agentId, location: "explorer" });
   }
+  const openStudio = () => client.openSurface("studio");
   function Surface(props: PluginSurfaceProps) {
-    return <ThemeStudio {...props} onOpenPreview={openPreview} onOpenPack={openPack} />;
+    return (
+      <ThemeStudio
+        {...props}
+        onOpenPreview={openPreview}
+        onOpenPack={openPack}
+        onOpenStudio={openStudio}
+        autoOpenDesigner
+      />
+    );
+  }
+  function SettingsScreen(props: PluginSurfaceProps) {
+    return <ThemeStudio {...props} onOpenPreview={openPreview} onOpenPack={openPack} onOpenStudio={openStudio} />;
   }
   function Panel(props: PluginWorkspacePanelProps) {
-    return <ThemeStudio {...props} onOpenPreview={openPreview} onOpenPack={openPack} />;
+    return <ThemeStudio {...props} onOpenPreview={openPreview} onOpenPack={openPack} onOpenStudio={openStudio} />;
   }
   client.addSurface("studio", Surface);
   client.addSidebarItem({ id: "studio", title: "Theme Studio", icon: "Palette", surface: "studio" });
@@ -138,7 +150,7 @@ export default function contribute(client: PluginClientContext) {
     locations: ["workspace", "explorer"],
     Component: Panel,
   });
-  client.addSettingsScreen({ id: "studio", title: "Theme Studio", icon: "Palette", Component: Surface });
+  client.addSettingsScreen({ id: "studio", title: "Theme Studio", icon: "Palette", Component: SettingsScreen });
   client.addCommandCenterItem({
     id: "open-studio",
     title: "Open Theme Studio",

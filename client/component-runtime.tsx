@@ -6,6 +6,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   componentTimelineSchema,
+  type ComponentDefinition,
   type ComponentInstance,
   type ComponentNode,
   type ComponentProps,
@@ -159,6 +160,57 @@ export function CompositionRenderer({ tree, theme, state, onAction }: ComponentP
   return null;
 }
 
+/** The chat card shared by real timeline rows and the studio preview. */
+export function ComponentCard({
+  theme,
+  definition,
+  state,
+  onAction,
+  feedback,
+  feedbackTone = "muted",
+}: {
+  theme: PluginTheme;
+  definition: ComponentDefinition;
+  state: ComponentState;
+  onAction: ComponentProps["onAction"];
+  feedback?: string | null;
+  feedbackTone?: "muted" | "danger";
+}) {
+  const c = theme.colors;
+  const Code = definition.mode === "code" ? generatedComponents[`${definition.id}@${definition.version}`] : undefined;
+  return (
+    <View
+      style={{
+        padding: 14,
+        gap: 10,
+        borderWidth: 1,
+        borderColor: c.border,
+        borderRadius: 12,
+        backgroundColor: c.surface1,
+      }}
+    >
+      <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>{definition.name}</Text>
+      <ComponentBoundary key={`${definition.id}@${definition.version}`} theme={theme}>
+        {definition.mode === "composition" ? (
+          <CompositionRenderer tree={definition.tree} theme={theme} state={state} onAction={onAction} />
+        ) : Code ? (
+          <Code theme={theme} state={state} onAction={onAction} />
+        ) : (
+          <Text style={{ color: c.foregroundMuted }}>Activate this component's validated build from Components.</Text>
+        )}
+      </ComponentBoundary>
+      {feedback ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{ color: feedbackTone === "danger" ? c.statusDanger : c.foregroundMuted, fontSize: 11 }}
+        >
+          {feedback}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 class ComponentBoundary extends Component<{ children: ReactNode; theme: PluginTheme }, { error: string | null }> {
   state = { error: null as string | null };
   static getDerivedStateFromError(error: Error) {
@@ -286,7 +338,13 @@ function ComponentRow({
   }, [pendingPatch, query.data?.instance.revision, mutation.isPending]);
   const c = theme.colors;
   if (!query.data)
-    return <Text style={{ color: c.foregroundMuted }}>{query.error?.message ?? "Loading component…"}</Text>;
+    return (
+      <Text style={{ color: c.foregroundMuted }}>
+        {query.error && /not found/i.test(query.error.message)
+          ? "This component was deleted from Theme Studio."
+          : (query.error?.message ?? "Loading component…")}
+      </Text>
+    );
   const { instance, definition } = query.data;
   const local = { ...instance.state, ...pendingPatch };
   if (
@@ -313,42 +371,18 @@ function ComponentRow({
       action: { ...action, patch: { ...pendingPatch, ...action.patch } },
     });
   };
-  const Code = generatedComponents[`${definition.id}@${definition.version}`];
   const feedback = mutation.isPending
     ? "Saving…"
     : (notice ?? (Object.keys(pendingPatch).length ? "Saving your input…" : interactionFeedback(instance, owner.data)));
   return (
-    <View
-      style={{
-        padding: 14,
-        gap: 10,
-        borderWidth: 1,
-        borderColor: c.border,
-        borderRadius: 12,
-        backgroundColor: c.surface1,
-      }}
-    >
-      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
-        <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>{definition.name}</Text>
-      </View>
-      <ComponentBoundary key={`${definition.id}@${definition.version}`} theme={theme}>
-        {definition.mode === "composition" ? (
-          <CompositionRenderer tree={definition.tree} theme={theme} state={local} onAction={onAction} />
-        ) : Code ? (
-          <Code theme={theme} state={local} onAction={onAction} />
-        ) : (
-          <Text style={{ color: c.foregroundMuted }}>Activate this component's validated build from Components.</Text>
-        )}
-      </ComponentBoundary>
-      {feedback && (
-        <Text
-          accessibilityLiveRegion="polite"
-          style={{ color: mutation.error ? c.statusDanger : c.foregroundMuted, fontSize: 11 }}
-        >
-          {feedback}
-        </Text>
-      )}
-    </View>
+    <ComponentCard
+      theme={theme}
+      definition={definition}
+      state={local}
+      onAction={onAction}
+      feedback={feedback}
+      feedbackTone={mutation.error ? "danger" : "muted"}
+    />
   );
 }
 

@@ -5,10 +5,13 @@ import type { StudioTheme } from "../shared/theme";
 import { previewColors, previewPluginTheme, type PreviewColors } from "./preview-colors";
 import { PackToolCard, PackNote, RecipePanel, packMetrics } from "./pack-runtime";
 
-export type PreviewScene = "chat" | "changes" | "terminal";
-type PreviewTab = PreviewScene | "activity";
+// A faithful, interactive miniature of Paseo 0.10's desktop layout, painted with the draft pack.
+export type PreviewScene = "chat" | "changes" | "terminal" | "panel";
 type ColorProps = { c: PreviewColors };
 const mono = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
+
+/** A plugin row shown inside the preview conversation, such as a custom component card. */
+export type PreviewTimelineItem = { key: string; node: ReactNode };
 
 function Glyph({ name, c, size = 14, color }: ColorProps & { name: string; size?: number; color?: string }) {
   return <Icon name={name} size={size} color={color ?? c.mutedForeground} />;
@@ -21,211 +24,140 @@ function Label({
   size = 12,
 }: ColorProps & { children: ReactNode; muted?: boolean; size?: number }) {
   return (
-    <Text style={{ color: muted ? c.mutedForeground : c.foreground, fontSize: size, lineHeight: size + 6 }}>
+    <Text
+      numberOfLines={1}
+      style={{ color: muted ? c.mutedForeground : c.foreground, fontSize: size, lineHeight: size + 6, flexShrink: 1 }}
+    >
       {children}
     </Text>
   );
 }
 
-function IconButton({
-  c,
-  icon,
-  label,
-  onPress,
-  selected = false,
-}: ColorProps & { icon: string; label: string; onPress: () => void; selected?: boolean }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [s.iconButton, { backgroundColor: selected || pressed ? c.selected : "transparent" }]}
-    >
-      <Glyph name={icon} c={c} color={selected ? c.foreground : c.mutedForeground} />
-    </Pressable>
-  );
-}
+const projects = [
+  {
+    name: "theme-creator",
+    badge: "#3f7a6b",
+    sessions: [{ title: "Pack designer", status: "running" as const }],
+  },
+  {
+    name: "website",
+    badge: "#4a6fa5",
+    sessions: [
+      { title: "Navigation review", status: "idle" as const },
+      { title: "Fix footer links", status: "idle" as const },
+    ],
+  },
+  {
+    name: "paseo-api",
+    badge: "#a0613f",
+    sessions: [{ title: "Refactor auth middleware", status: "attention" as const }],
+  },
+];
 
-function Sidebar({
-  c,
-  collapsed,
-  forcedCompact,
-  setCollapsed,
-  selected,
-  setSelected,
-}: ColorProps & {
-  collapsed: boolean;
-  forcedCompact: boolean;
-  setCollapsed: (value: boolean) => void;
-  selected: string;
-  setSelected: (value: string) => void;
-}) {
-  const workspaces = [
-    { title: "Theme creator", subtitle: "theme-creator · dev", status: c.dotSuccess },
-    { title: "Website", subtitle: "feature/navigation", status: c.dotSuccess },
-    { title: "API refactor", subtitle: "paseo-api · dev", status: c.dotWarning },
-    { title: "Design system", subtitle: "paseo-ui · dev", status: c.dotSuccess },
-    { title: "Mobile app", subtitle: "paseo-mobile · planning", status: c.ring },
-  ];
+function Sidebar({ c, selected, onSelect }: ColorProps & { selected: string; onSelect: (title: string) => void }) {
   return (
-    <View style={[s.sidebar, { width: collapsed ? 42 : 168, backgroundColor: c.sidebar, borderRightColor: c.border }]}>
-      <View style={[s.sidebarTitle, collapsed && { justifyContent: "center", paddingHorizontal: 0 }]}>
-        {!collapsed && (
-          <View style={s.trafficLights}>
-            {["#ff5f57", "#febc2e", "#28c840"].map(color => (
-              <View key={color} style={[s.trafficLight, { backgroundColor: color }]} />
-            ))}
-          </View>
-        )}
-        {forcedCompact ? (
-          <Glyph name="PanelLeft" c={c} />
-        ) : (
-          <IconButton
-            c={c}
-            icon="PanelLeft"
-            label={collapsed ? "Expand preview sidebar" : "Collapse preview sidebar"}
-            onPress={() => setCollapsed(!collapsed)}
-          />
-        )}
-      </View>
-      <View style={[s.navigation, collapsed && { paddingHorizontal: 5 }]}>
+    <View style={[s.sidebar, { backgroundColor: c.sidebar, borderRightColor: c.border }]}>
+      <View style={s.navigation}>
         {[
           ["Plus", "New workspace"],
           ["History", "History"],
+          ["Search", "Search"],
           ["CalendarClock", "Schedules"],
+          ["Palette", "Theme Studio"],
         ].map(([icon, label]) => (
-          <View
-            key={label}
-            accessibilityLabel={label}
-            style={[s.navRow, collapsed && { justifyContent: "center", paddingHorizontal: 0 }]}
-          >
-            <Glyph name={icon} c={c} />
-            {!collapsed && (
-              <Label c={c} muted>
-                {label}
-              </Label>
-            )}
+          <View key={label} style={s.navRow}>
+            <Glyph name={icon} c={c} size={13} />
+            <Label c={c} muted size={12}>
+              {label}
+            </Label>
           </View>
         ))}
       </View>
-      <View style={[s.sidebarDivider, { backgroundColor: c.border }]} />
-      {!collapsed && (
-        <View style={s.sectionTitle}>
-          <Label c={c} muted size={10}>
-            Workspaces
-          </Label>
-          <View style={s.row}>
-            <Glyph name="Search" c={c} size={12} />
-            <Glyph name="SlidersHorizontal" c={c} size={12} />
-          </View>
-        </View>
-      )}
-      <ScrollView
-        style={s.flex}
-        contentContainerStyle={{ paddingHorizontal: collapsed ? 5 : 5, paddingTop: collapsed ? 10 : 3 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {workspaces.map(workspace => (
-          <Pressable
-            key={workspace.title}
-            accessibilityRole="button"
-            accessibilityLabel={`Preview ${workspace.title} workspace`}
-            accessibilityState={{ selected: selected === workspace.title }}
-            onPress={() => setSelected(workspace.title)}
-            style={({ pressed }) => [
-              s.workspaceRow,
-              collapsed && { justifyContent: "center", paddingHorizontal: 0, height: 38 },
-              { backgroundColor: selected === workspace.title || pressed ? c.selected : "transparent" },
-            ]}
-          >
-            <View style={[s.statusDot, { backgroundColor: workspace.status }]} />
-            {!collapsed && (
-              <View style={s.flex}>
-                <Text numberOfLines={1} style={{ fontSize: 12, color: c.foreground, lineHeight: 19 }}>
-                  {workspace.title}
-                </Text>
-                <Text numberOfLines={1} style={{ fontSize: 10, color: c.mutedForeground, lineHeight: 15 }}>
-                  {workspace.subtitle}
+      <View style={[s.divider, { backgroundColor: c.border }]} />
+      <View style={s.sectionTitle}>
+        <Label c={c} muted size={10}>
+          Workspaces
+        </Label>
+        <Glyph name="SlidersHorizontal" c={c} size={11} />
+      </View>
+      <ScrollView style={s.flex} contentContainerStyle={{ paddingHorizontal: 6 }} showsVerticalScrollIndicator={false}>
+        {projects.map(project => (
+          <View key={project.name} style={{ marginBottom: 6 }}>
+            <View style={s.projectRow}>
+              <View style={[s.badge, { backgroundColor: project.badge }]}>
+                <Text style={{ color: "#ffffff", fontSize: 8, fontWeight: "600" }}>
+                  {project.name[0].toUpperCase()}
                 </Text>
               </View>
-            )}
-          </Pressable>
-        ))}
-        {!collapsed && (
-          <View style={[s.navRow, { marginTop: 12, alignItems: "flex-start" }]}>
-            <Glyph name="Archive" c={c} />
-            <View>
-              <Label c={c}>Archived</Label>
-              <Label c={c} muted size={10}>
-                3 workspaces
+              <Label c={c} muted size={12}>
+                {project.name}
               </Label>
             </View>
+            {project.sessions.map(session => {
+              const active = selected === session.title;
+              return (
+                <Pressable
+                  key={session.title}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Preview ${session.title}`}
+                  accessibilityState={{ selected: active }}
+                  onPress={() => onSelect(session.title)}
+                  style={({ pressed }) => [
+                    s.sessionRow,
+                    { backgroundColor: active || pressed ? c.selected : "transparent" },
+                  ]}
+                >
+                  <View
+                    style={[
+                      s.sessionDot,
+                      {
+                        backgroundColor:
+                          session.status === "running"
+                            ? c.dotRunning
+                            : session.status === "attention"
+                              ? c.dotWarning
+                              : c.border,
+                      },
+                    ]}
+                  />
+                  <Label c={c} size={12}>
+                    {session.title}
+                  </Label>
+                </Pressable>
+              );
+            })}
           </View>
-        )}
+        ))}
       </ScrollView>
-      <View style={[s.localHost, collapsed && { justifyContent: "center", paddingHorizontal: 0 }]}>
-        <Glyph name="Monitor" c={c} />
-        {!collapsed && (
-          <Label c={c} size={11}>
-            Local
-          </Label>
-        )}
-        <View style={[s.statusDot, { width: 5, height: 5, backgroundColor: c.dotSuccess }]} />
-      </View>
-      <View
-        style={[
-          s.sidebarFooter,
-          { borderTopColor: c.border },
-          collapsed && { flexDirection: "column", paddingHorizontal: 0 },
-        ]}
-      >
-        {(collapsed ? ["Settings"] : ["Server", "FolderPlus", "House", "CircleHelp", "Settings"]).map(icon => (
-          <View key={icon} style={s.footerIcon}>
-            <Glyph name={icon} c={c} size={13} />
-          </View>
+      <View style={[s.sidebarFooter, { borderTopColor: c.border }]}>
+        <Glyph name="FolderPlus" c={c} size={13} />
+        <Label c={c} muted size={11}>
+          Add project
+        </Label>
+        <View style={s.flex} />
+        {["Server", "HardDriveDownload", "CircleHelp", "Settings"].map(icon => (
+          <Glyph key={icon} name={icon} c={c} size={12} />
         ))}
       </View>
     </View>
   );
 }
 
-function WorkspaceHeader({
-  c,
-  title,
-  narrow,
-  onChanges,
-}: ColorProps & { title: string; narrow: boolean; onChanges: () => void }) {
+function WorkspaceHeader({ c, title, narrow }: ColorProps & { title: string; narrow: boolean }) {
   return (
-    <View style={[s.workspaceHeader, { backgroundColor: c.sidebar, borderBottomColor: c.border }]}>
-      <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 12, fontWeight: "500", flexShrink: 1 }}>
+    <View style={[s.workspaceHeader, { borderBottomColor: c.border }]}>
+      <Glyph name="PanelLeft" c={c} size={13} />
+      <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 12, flexShrink: 1 }}>
         {title}
       </Text>
       {!narrow && (
-        <Text numberOfLines={1} style={{ color: c.mutedForeground, fontSize: 10, flexShrink: 1 }}>
-          feature/navigation
+        <Text numberOfLines={1} style={{ color: c.mutedForeground, fontSize: 11, flexShrink: 1 }}>
+          website
         </Text>
       )}
+      <Glyph name="Ellipsis" c={c} size={13} />
       <View style={s.flex} />
-      {!narrow && (
-        <View style={[s.headerControl, { borderColor: c.border }]}>
-          <Glyph name="GitCommitHorizontal" c={c} size={12} />
-          <Label c={c} size={10}>
-            Commit
-          </Label>
-          <Glyph name="ChevronDown" c={c} size={10} />
-        </View>
-      )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Show preview changes, 3 additions and 1 deletion"
-        onPress={onChanges}
-        style={[s.headerControl, { backgroundColor: c.raised, borderColor: c.border }]}
-      >
-        <Text style={{ fontSize: 10, color: c.success }}>+3</Text>
-        <Text style={{ fontSize: 10, color: c.danger }}>−1</Text>
-      </Pressable>
-      <Glyph name="Ellipsis" c={c} />
+      <Glyph name="PanelRight" c={c} size={13} />
     </View>
   );
 }
@@ -234,50 +166,53 @@ function Tabs({
   c,
   active,
   onSelect,
-  narrow,
-  pack,
-}: ColorProps & { active: PreviewTab; onSelect: (value: PreviewTab) => void; narrow: boolean; pack: StudioTheme }) {
-  const tabs: { id: PreviewTab; title: string; icon: string }[] = [
-    { id: "chat", title: narrow ? "Agent" : "Navigation review", icon: "Sparkles" },
-    { id: "terminal", title: "Terminal", icon: "Terminal" },
+  title,
+  showPanelTab,
+  panelTitle,
+  panelIcon,
+}: ColorProps & {
+  active: PreviewScene;
+  onSelect: (value: PreviewScene) => void;
+  title: string;
+  showPanelTab: boolean;
+  panelTitle: string;
+  panelIcon: string;
+}) {
+  const tabs: { id: PreviewScene; title: string; icon: string }[] = [
+    { id: "chat", title, icon: "Sparkles" },
+    { id: "terminal", title: "Terminal", icon: "SquareTerminal" },
     { id: "changes", title: "Changes", icon: "GitCompareArrows" },
   ];
-  if (pack.ui.activityPanel || pack.ui.panel.enabled)
-    tabs.push({
-      id: "activity",
-      title: pack.ui.activityPanel ? "Activity" : pack.ui.panel.title,
-      icon: pack.ui.activityPanel ? "Activity" : pack.ui.panel.icon,
-    });
+  if (showPanelTab) tabs.push({ id: "panel", title: panelTitle, icon: panelIcon });
   return (
-    <View style={[s.tabs, { backgroundColor: c.sidebar, borderBottomColor: c.border }]}>
-      {tabs.map(tab => (
-        <Pressable
-          key={tab.id}
-          accessibilityRole="tab"
-          accessibilityLabel={`${tab.title} preview`}
-          accessibilityState={{ selected: active === tab.id }}
-          onPress={() => onSelect(tab.id)}
-          style={({ pressed }) => [
-            s.tab,
-            {
-              borderTopColor: active === tab.id ? c.accent : "transparent",
-              borderRightColor: c.border,
-              backgroundColor: active === tab.id ? c.workspace : pressed ? c.selected : "transparent",
-            },
-          ]}
-        >
-          <Glyph name={tab.icon} c={c} size={12} color={active === tab.id ? c.foreground : c.mutedForeground} />
-          <Text
-            numberOfLines={1}
-            style={{ fontSize: 10, color: active === tab.id ? c.foreground : c.mutedForeground, flexShrink: 1 }}
+    <View style={[s.tabs, { borderBottomColor: c.border }]}>
+      {tabs.map(tab => {
+        const selected = active === tab.id;
+        return (
+          <Pressable
+            key={tab.id}
+            accessibilityRole="tab"
+            accessibilityLabel={`${tab.title} preview`}
+            accessibilityState={{ selected }}
+            onPress={() => onSelect(tab.id)}
+            style={({ pressed }) => [s.tab, { backgroundColor: selected || pressed ? c.selected : "transparent" }]}
           >
-            {tab.title}
-          </Text>
-        </Pressable>
-      ))}
+            <Glyph name={tab.icon} c={c} size={11} color={selected ? c.foreground : c.mutedForeground} />
+            <Text
+              numberOfLines={1}
+              style={{ fontSize: 11, color: selected ? c.foreground : c.mutedForeground, flexShrink: 1 }}
+            >
+              {tab.title}
+            </Text>
+          </Pressable>
+        );
+      })}
+      <View style={{ paddingHorizontal: 6 }}>
+        <Glyph name="Plus" c={c} size={12} />
+      </View>
       <View style={s.flex} />
       <View style={{ paddingHorizontal: 8 }}>
-        <Glyph name="Plus" c={c} size={12} />
+        <Glyph name="Ellipsis" c={c} size={12} />
       </View>
     </View>
   );
@@ -378,42 +313,6 @@ function CodeDiff({ c, full = false }: ColorProps & { full?: boolean }) {
         ))}
       </View>
     </ScrollView>
-  );
-}
-
-function ToolRow({ c, type }: ColorProps & { type: "read" | "edit" }) {
-  const [expanded, setExpanded] = useState(type === "edit");
-  return (
-    <View style={[s.tool, { borderColor: c.border }]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${type === "read" ? "read navigation.tsx" : "edit sidebar.tsx"} tool details`}
-        accessibilityState={{ expanded }}
-        onPress={() => setExpanded(!expanded)}
-        style={({ pressed }) => [s.toolHeader, { backgroundColor: pressed ? c.selected : "transparent" }]}
-      >
-        <Glyph name={type === "read" ? "CircleCheck" : "Wrench"} c={c} size={13} />
-        <Label c={c} size={11}>
-          {type === "read" ? "Read navigation.tsx" : "Edit sidebar.tsx"}
-        </Label>
-        <View style={s.flex} />
-        <Glyph name={expanded ? "ChevronUp" : "ChevronDown"} c={c} size={11} />
-      </Pressable>
-      {expanded && (
-        <View style={[s.toolBody, { borderColor: c.border }]}>
-          {type === "edit" ? (
-            <CodeDiff c={c} />
-          ) : (
-            <View style={{ padding: 10, backgroundColor: c.raised }}>
-              <Text style={[s.codeText, { color: c.mutedForeground }]}>Read 84 lines · src/navigation.tsx</Text>
-              <Text style={[s.codeText, { color: c.foreground, marginTop: 5 }]}>
-                export const navigation = ["Home", "Website"];
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
-    </View>
   );
 }
 
@@ -571,139 +470,230 @@ function Changes({ c }: ColorProps) {
   );
 }
 
+function ToolRow({
+  c,
+  icon,
+  name,
+  detail,
+  children,
+}: ColorProps & { icon: string; name: string; detail: string; children?: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${name} ${detail}`}
+        accessibilityState={{ expanded }}
+        disabled={!children}
+        onPress={() => setExpanded(!expanded)}
+        style={({ pressed }) => [s.toolRow, { opacity: pressed ? 0.7 : 1 }]}
+      >
+        <Glyph name={icon} c={c} size={12} />
+        <Text numberOfLines={1} style={{ fontSize: 12, color: c.mutedForeground, flexShrink: 1 }}>
+          <Text style={{ color: c.foreground }}>{name}</Text> {detail}
+        </Text>
+      </Pressable>
+      {expanded && children ? <View style={[s.toolBody, { borderColor: c.border }]}>{children}</View> : null}
+    </View>
+  );
+}
+
 function Composer({ c, onSubmit, narrow }: ColorProps & { onSubmit: (text: string) => void; narrow: boolean }) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
-  const inputRef = useRef<TextInput>(null);
   function submit() {
-    if (draft.trim()) {
-      onSubmit(draft.trim());
-      setDraft("");
-    }
+    if (!draft.trim()) return;
+    onSubmit(draft.trim());
+    setDraft("");
   }
   return (
     <View style={[s.composer, { backgroundColor: c.raised, borderColor: focused ? c.ring : c.border }]}>
       <TextInput
-        ref={inputRef}
         accessibilityLabel="Preview message. Messages only appear in this demo."
         multiline
-        placeholder={narrow ? "Message the agent…" : "Message the agent, tag @files, or use /commands"}
-        placeholderTextColor={c.ring}
+        placeholder={narrow ? "Message the agent…" : "Message the agent, tag @files, or use /commands and /skills"}
+        placeholderTextColor={c.mutedForeground}
         value={draft}
         onChangeText={setDraft}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        onSubmitEditing={submit}
         style={[s.composerInput, { color: c.foreground }]}
       />
       <View style={s.composerFooter}>
-        <View style={s.row}>
-          <Glyph name="Plus" c={c} />
-          <Glyph name="Paperclip" c={c} />
-        </View>
-        <View style={[s.row, { gap: 4 }]}>
-          <Glyph name="Sparkles" c={c} size={12} />
-          <Label c={c} muted size={10}>
-            {narrow ? "Sonnet" : "Sonnet 4.6"}
+        <Glyph name="Plus" c={c} size={13} />
+        <View style={s.chip}>
+          <Glyph name="Sparkles" c={c} size={11} />
+          <Label c={c} muted size={11}>
+            GPT-6.1-Sol
           </Label>
-          <Glyph name="ChevronDown" c={c} size={9} />
+          <Glyph name="ChevronDown" c={c} size={10} />
         </View>
         {!narrow && (
-          <View style={[s.row, { gap: 4 }]}>
-            <Glyph name="Blocks" c={c} size={12} />
-            <Label c={c} muted size={10}>
-              Build
-            </Label>
-            <Glyph name="ChevronDown" c={c} size={9} />
-          </View>
+          <>
+            <View style={s.chip}>
+              <Glyph name="Brain" c={c} size={11} />
+              <Label c={c} muted size={11}>
+                High
+              </Label>
+              <Glyph name="ChevronDown" c={c} size={10} />
+            </View>
+            <View style={s.chip}>
+              <Glyph name="Shield" c={c} size={11} />
+              <Label c={c} muted size={11}>
+                Default permissions
+              </Label>
+              <Glyph name="ChevronDown" c={c} size={10} />
+            </View>
+          </>
         )}
         <View style={s.flex} />
-        <Glyph name="Mic" c={c} size={13} />
+        <Glyph name="Mic" c={c} size={12} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send simulated preview message"
-          accessibilityHint="Adds a sample response without contacting an agent"
           accessibilityState={{ disabled: !draft.trim() }}
           onPress={submit}
           disabled={!draft.trim()}
           style={({ pressed }) => [
             s.sendButton,
-            { backgroundColor: draft.trim() ? c.accent : c.control, opacity: pressed ? 0.75 : 1 },
+            { backgroundColor: draft.trim() ? c.accent : "transparent", opacity: pressed ? 0.75 : 1 },
           ]}
         >
-          <Glyph name="ArrowUp" c={c} size={14} color={draft.trim() ? c.accentForeground : c.mutedForeground} />
+          <Glyph
+            name={draft.trim() ? "ArrowUp" : "AudioLines"}
+            c={c}
+            size={13}
+            color={draft.trim() ? c.accentForeground : c.mutedForeground}
+          />
         </Pressable>
       </View>
     </View>
   );
 }
 
-function Chat({ c, narrow, pack }: ColorProps & { narrow: boolean; pack: StudioTheme }) {
+function Chat({
+  c,
+  narrow,
+  pack,
+  items,
+}: ColorProps & { narrow: boolean; pack: StudioTheme; items: PreviewTimelineItem[] }) {
   const [messages, setMessages] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    // Bring a newly inspected component into view.
+    if (items.length) scrollRef.current?.scrollToEnd({ animated: true });
+  }, [items.map(item => item.key).join("|")]);
   return (
     <View style={s.flex}>
       <ScrollView
         ref={scrollRef}
         style={s.flex}
-        contentContainerStyle={[s.chatContent, { paddingHorizontal: narrow ? 12 : 18 }]}
+        contentContainerStyle={[s.chatContent, { paddingHorizontal: narrow ? 14 : 28 }]}
         showsVerticalScrollIndicator={false}
         onContentSizeChange={() => {
           if (messages.length) scrollRef.current?.scrollToEnd({ animated: true });
         }}
       >
-        <View style={[s.userBubble, { backgroundColor: c.bubble }]}>
-          <Label c={c} size={12}>
-            Review the navigation and fix the active states.
-          </Label>
-        </View>
-        <Text style={[s.assistantText, { color: c.foreground }]}>
-          I updated the menu and checked the navigation states.
-        </Text>
-        <View style={{ gap: 0 }}>
-          <ToolRow c={c} type="read" />
-          <ToolRow c={c} type="edit" />
-        </View>
-        {pack.ui.toolCards === "native" ? (
-          <Terminal c={c} />
-        ) : (
-          <PackToolCard
-            theme={previewPluginTheme(pack)}
-            pack={pack}
-            data={{
-              label: "Run npm run check",
-              kind: "shell",
-              command: "npm run check",
-              output: "✓ Typecheck passed\n✓ 4 navigation tests passed",
-              exitCode: 0,
-            }}
-            initiallyExpanded
-          />
-        )}
-        <Text style={[s.assistantText, { color: c.foreground }]}>
-          The selected workspace now uses the control color. All four navigation tests pass.
-        </Text>
-        <View style={[s.row, { gap: 6 }]}>
-          <Glyph name="Clock" c={c} size={12} />
-          <Label c={c} muted size={10}>
-            Worked for 8s
-          </Label>
-        </View>
-        {messages.map((message, index) => (
-          <View key={index} style={{ gap: 16, marginTop: 12 }}>
-            <View style={[s.userBubble, { backgroundColor: c.bubble }]}>
-              <Label c={c} size={12}>
-                {message}
-              </Label>
+        <View style={s.chatColumn}>
+          <View style={[s.userBubble, { backgroundColor: c.bubble }]}>
+            <Text style={{ color: c.foreground, fontSize: 12, lineHeight: 18 }}>
+              Review the navigation and fix the active states.
+            </Text>
+          </View>
+          <Text style={[s.assistantText, { color: c.foreground }]}>
+            I'll check the sidebar items, then fix how the selected workspace is highlighted.
+          </Text>
+          <View>
+            <ToolRow c={c} icon="Wrench" name="Read" detail="src/navigation.tsx">
+              <View style={{ padding: 10, backgroundColor: c.raised }}>
+                <Text style={[s.codeText, { color: c.mutedForeground }]}>Read 84 lines</Text>
+                <Text style={[s.codeText, { color: c.foreground, marginTop: 5 }]}>
+                  export const navigation = ["Home", "Website"];
+                </Text>
+              </View>
+            </ToolRow>
+            <ToolRow c={c} icon="Search" name="Search" detail="isActive surface">
+              <View style={{ padding: 10, backgroundColor: c.raised }}>
+                <Text style={[s.codeText, { color: c.foreground }]}>src/sidebar.tsx:14</Text>
+              </View>
+            </ToolRow>
+            <ToolRow c={c} icon="Pencil" name="Edit" detail="src/sidebar.tsx">
+              <CodeDiff c={c} />
+            </ToolRow>
+            <ToolRow c={c} icon="SquareTerminal" name="Shell" detail="npm run check">
+              {pack.ui.toolCards === "native" ? <Terminal c={c} /> : null}
+            </ToolRow>
+          </View>
+          {pack.ui.toolCards !== "native" ? (
+            <PackToolCard
+              theme={previewPluginTheme(pack)}
+              pack={pack}
+              data={{
+                label: "Run npm run check",
+                kind: "shell",
+                command: "npm run check",
+                output: "✓ Typecheck passed\n✓ 4 navigation tests passed",
+                exitCode: 0,
+              }}
+              initiallyExpanded
+            />
+          ) : null}
+          {items.map(item => (
+            <View key={item.key}>{item.node}</View>
+          ))}
+          <View style={[s.divider, { backgroundColor: c.border, marginVertical: 2 }]} />
+          <Text style={[s.assistantText, { color: c.foreground }]}>
+            The selected workspace now uses the control color, and all four navigation tests pass.
+          </Text>
+          <View style={[s.row, { gap: 10 }]}>
+            <Glyph name="Copy" c={c} size={11} />
+            <Glyph name="GitFork" c={c} size={11} />
+            <Label c={c} muted size={11}>
+              Worked for 8s
+            </Label>
+          </View>
+          {messages.map((message, index) => (
+            <View key={index} style={{ gap: 14 }}>
+              <View style={[s.userBubble, { backgroundColor: c.bubble }]}>
+                <Text style={{ color: c.foreground, fontSize: 12, lineHeight: 18 }}>{message}</Text>
+              </View>
+              <Text style={[s.assistantText, { color: c.foreground }]}>
+                This is a preview conversation. Your palette is shown across the sidebar, messages, tools, and composer.
+              </Text>
             </View>
-            <Text style={[s.assistantText, { color: c.foreground }]}>
-              This is a preview conversation. Your palette is shown across the sidebar, messages, tools, and composer.
+          ))}
+        </View>
+      </ScrollView>
+      <View style={{ paddingHorizontal: narrow ? 12 : 28, paddingBottom: 12, paddingTop: 6 }}>
+        <View style={s.chatColumn}>
+          <Composer c={c} narrow={narrow} onSubmit={text => setMessages(previous => [...previous, text])} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function Explorer({ c, pack }: ColorProps & { pack: StudioTheme }) {
+  const title = pack.ui.panel.enabled ? pack.ui.panel.title : "Pack activity";
+  const icon = pack.ui.panel.enabled ? pack.ui.panel.icon : "Activity";
+  return (
+    <View style={[s.explorer, { borderLeftColor: c.border, backgroundColor: c.workspace }]}>
+      <View style={[s.tabs, { borderBottomColor: c.border, paddingHorizontal: 6 }]}>
+        {[
+          ["Files", "Files"],
+          ["Changes", "GitCompareArrows"],
+          [title, icon],
+        ].map(([label, glyph], index) => (
+          <View key={label} style={[s.tab, { backgroundColor: index === 2 ? c.selected : "transparent" }]}>
+            <Glyph name={glyph} c={c} size={11} color={index === 2 ? c.foreground : c.mutedForeground} />
+            <Text numberOfLines={1} style={{ fontSize: 11, color: index === 2 ? c.foreground : c.mutedForeground }}>
+              {label}
             </Text>
           </View>
         ))}
-      </ScrollView>
-      <View style={{ paddingHorizontal: narrow ? 12 : 18, paddingBottom: 14, paddingTop: 8 }}>
-        <Composer c={c} narrow={narrow} onSubmit={text => setMessages(previous => [...previous, text])} />
       </View>
+      <PreviewActivity pack={pack} />
     </View>
   );
 }
@@ -712,22 +702,28 @@ export function PaseoPreview({
   theme,
   compact = false,
   scene = "chat",
+  onSceneChange,
+  items = [],
 }: {
   theme: StudioTheme;
   compact?: boolean;
   scene?: PreviewScene;
+  onSceneChange?: (scene: PreviewScene) => void;
+  items?: PreviewTimelineItem[];
 }) {
   const c = previewColors(theme);
-  const [active, setActive] = useState<PreviewTab>(scene);
-  const [width, setWidth] = useState(800);
-  const [manuallyCollapsed, setManuallyCollapsed] = useState(false);
-  const [workspace, setWorkspace] = useState("Website");
-  const narrow = compact || width < 520;
-  const collapsed = narrow || manuallyCollapsed;
-  useEffect(() => setActive(scene), [scene]);
+  const [localScene, setLocalScene] = useState<PreviewScene>(scene);
+  const active = onSceneChange ? scene : localScene;
+  const setActive = onSceneChange ?? setLocalScene;
+  const [width, setWidth] = useState(900);
+  const [session, setSession] = useState("Navigation review");
+  const narrow = compact || width < 560;
+  const hasPanel = theme.ui.activityPanel || theme.ui.panel.enabled;
+  // Wide previews show the pack panel where Paseo shows it: the explorer beside the chat.
+  const explorer = hasPanel && width >= 980;
   useEffect(() => {
-    if (active === "activity" && !theme.ui.activityPanel && !theme.ui.panel.enabled) setActive("chat");
-  }, [active, theme.ui.activityPanel, theme.ui.panel.enabled]);
+    if (active === "panel" && (!hasPanel || explorer)) setActive("chat");
+  }, [active, hasPanel, explorer]);
   return (
     <View
       testID="paseo-preview"
@@ -735,20 +731,21 @@ export function PaseoPreview({
       onLayout={event => setWidth(event.nativeEvent.layout.width)}
       style={[s.frame, { borderColor: c.border, backgroundColor: c.workspace }]}
     >
-      <Sidebar
-        c={c}
-        collapsed={collapsed}
-        forcedCompact={narrow}
-        setCollapsed={setManuallyCollapsed}
-        selected={workspace}
-        setSelected={setWorkspace}
-      />
+      {!narrow && <Sidebar c={c} selected={session} onSelect={setSession} />}
       <View style={s.flex}>
-        <WorkspaceHeader c={c} title={workspace} narrow={narrow} onChanges={() => setActive("changes")} />
-        <Tabs c={c} active={active} onSelect={setActive} narrow={narrow} pack={theme} />
+        <WorkspaceHeader c={c} title={session} narrow={narrow} />
+        <Tabs
+          c={c}
+          active={active}
+          onSelect={setActive}
+          title={session}
+          showPanelTab={hasPanel && !explorer}
+          panelTitle={theme.ui.panel.enabled ? theme.ui.panel.title : "Pack activity"}
+          panelIcon={theme.ui.panel.enabled ? theme.ui.panel.icon : "Activity"}
+        />
         <View style={[s.flex, { backgroundColor: c.workspace }]}>
           {active === "chat" ? (
-            <Chat c={c} narrow={narrow} pack={theme} />
+            <Chat c={c} narrow={narrow} pack={theme} items={items} />
           ) : active === "terminal" ? (
             <Terminal c={c} full />
           ) : active === "changes" ? (
@@ -758,6 +755,7 @@ export function PaseoPreview({
           )}
         </View>
       </View>
+      {explorer && <Explorer c={c} pack={theme} />}
     </View>
   );
 }
@@ -821,97 +819,68 @@ const s = StyleSheet.create({
     minHeight: 0,
     flexDirection: "row",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     overflow: "hidden",
   },
-  sidebar: { flexShrink: 0, borderRightWidth: 1 },
-  sidebarTitle: {
-    height: 36,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  trafficLights: { flexDirection: "row", gap: 5 },
-  trafficLight: { width: 8, height: 8, borderRadius: 4 },
-  iconButton: { width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: 4 },
-  navigation: { paddingHorizontal: 8, paddingTop: 3, paddingBottom: 8 },
-  navRow: { flexDirection: "row", alignItems: "center", gap: 9, minHeight: 30, paddingHorizontal: 6 },
-  sidebarDivider: { height: 1 },
+  sidebar: { width: 196, flexShrink: 0, borderRightWidth: 1 },
+  navigation: { paddingHorizontal: 6, paddingTop: 8, paddingBottom: 6 },
+  navRow: { flexDirection: "row", alignItems: "center", gap: 8, height: 26, paddingHorizontal: 8 },
+  divider: { height: 1 },
   sectionTitle: {
-    paddingHorizontal: 12,
-    paddingTop: 13,
+    paddingHorizontal: 14,
+    paddingTop: 12,
     paddingBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  workspaceRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    minHeight: 46,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 5,
-    marginBottom: 2,
-  },
-  statusDot: { width: 6, height: 6, borderRadius: 3, marginTop: 6, flexShrink: 0 },
-  localHost: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, height: 34 },
+  projectRow: { flexDirection: "row", alignItems: "center", gap: 7, height: 28, paddingHorizontal: 8 },
+  badge: { width: 12, height: 12, borderRadius: 3, alignItems: "center", justifyContent: "center" },
+  sessionRow: { flexDirection: "row", alignItems: "center", gap: 8, height: 28, paddingHorizontal: 8, borderRadius: 6 },
+  sessionDot: { width: 5, height: 5, borderRadius: 3, marginLeft: 3, flexShrink: 0 },
   sidebarFooter: {
-    height: 34,
+    height: 36,
     borderTopWidth: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 10,
+    gap: 9,
+    paddingHorizontal: 12,
   },
-  footerIcon: { width: 22, height: 24, alignItems: "center", justifyContent: "center" },
   workspaceHeader: {
-    height: 36,
+    height: 34,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
   },
-  headerControl: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    height: 24,
-    paddingHorizontal: 7,
-    borderWidth: 1,
-    borderRadius: 4,
-  },
-  tabs: { height: 34, flexDirection: "row", alignItems: "center", borderBottomWidth: 1 },
+  tabs: { height: 34, flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 5, borderBottomWidth: 1 },
   tab: {
-    height: 33,
-    borderTopWidth: 2,
-    borderRightWidth: 1,
-    paddingHorizontal: 10,
+    height: 24,
+    borderRadius: 6,
+    paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     flexShrink: 1,
+    maxWidth: 170,
   },
-  chatContent: { paddingTop: 16, paddingBottom: 12, gap: 15 },
+  chatContent: { paddingTop: 18, paddingBottom: 12 },
+  chatColumn: { width: "100%", maxWidth: 640, alignSelf: "center", gap: 14 },
   userBubble: {
     alignSelf: "flex-end",
-    maxWidth: "90%",
+    maxWidth: "85%",
     paddingHorizontal: 13,
-    paddingVertical: 11,
-    borderRadius: 14,
-    borderTopRightRadius: 4,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   assistantText: { fontSize: 12, lineHeight: 19 },
-  tool: { borderTopWidth: 1 },
-  toolHeader: { height: 32, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 2 },
-  toolBody: { borderWidth: 1, borderRadius: 5, overflow: "hidden", marginBottom: 7 },
+  toolRow: { height: 26, flexDirection: "row", alignItems: "center", gap: 8 },
+  toolBody: { borderWidth: 1, borderRadius: 6, overflow: "hidden", marginBottom: 6, marginTop: 2 },
   codeLine: { height: 18, flexDirection: "row", alignItems: "center" },
   codeText: { fontFamily: mono, fontSize: 10, lineHeight: 18 },
   lineNumber: { fontFamily: mono, fontSize: 10, width: 26, textAlign: "right", paddingRight: 6 },
-  terminalInline: { height: 91, borderWidth: 1, borderRadius: 5, overflow: "hidden" },
+  terminalInline: { height: 91, overflow: "hidden" },
   terminalFull: { flex: 1, minHeight: 0, minWidth: 0 },
   terminalHeader: {
     height: 26,
@@ -930,26 +899,29 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
-  composer: { borderWidth: 1, borderRadius: 14, overflow: "hidden" },
+  statusDot: { width: 6, height: 6, borderRadius: 3, flexShrink: 0 },
+  composer: { borderWidth: 1, borderRadius: 12, overflow: "hidden" },
   composerInput: {
-    minHeight: 47,
+    minHeight: 44,
     maxHeight: 100,
     paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 11,
+    paddingBottom: 6,
     fontSize: 12,
     lineHeight: 18,
     textAlignVertical: "top",
   },
   composerFooter: {
-    height: 36,
+    height: 34,
     paddingHorizontal: 10,
-    paddingBottom: 6,
+    paddingBottom: 4,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  sendButton: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  chip: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
+  sendButton: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  explorer: { width: 260, flexShrink: 0, borderLeftWidth: 1 },
   changeToolbar: {
     height: 31,
     flexDirection: "row",

@@ -26,6 +26,7 @@ import {
   type ComponentState,
 } from "../shared/components";
 import { CompositionRenderer } from "./component-runtime";
+import { componentLibraryQueryKey, definitionKey, DeleteComponentDialog } from "./component-inspector";
 import { generatedComponents } from "./generated-components";
 import { StudioButton, StudioCard, StudioLabel } from "./studio-ui";
 import { AgentConnectionCard } from "./agent-connection";
@@ -35,7 +36,6 @@ export type ComponentLibraryProps = Pick<PluginSurfaceProps, "theme" | "layout" 
   workspaceId?: string;
   agentId?: string;
 };
-export const componentLibraryQueryKey = ["theme-studio-component-library"] as const;
 type Dialog = "create" | "inspect" | "publish" | "versions" | null;
 type ComponentMode = ComponentDefinition["mode"];
 const libraryViews = new Map<string, { search: string; favoritesOnly: boolean }>();
@@ -79,7 +79,6 @@ export default function DecisionCard({ theme, state, onAction }: ComponentProps)
 function errorMessage(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason);
 }
-const definitionKey = (definition: ComponentDefinition) => `${definition.id}@${definition.version}`;
 const definitionSource = (definition: ComponentDefinition) =>
   definition.mode === "composition" ? JSON.stringify(definition.tree, null, 2) : definition.code;
 
@@ -118,6 +117,7 @@ function ComponentTile({
   onVersion,
   onHistory,
   onPublish,
+  onDelete,
 }: {
   theme: PluginTheme;
   definition: ComponentDefinition;
@@ -129,6 +129,7 @@ function ComponentTile({
   onVersion: () => void;
   onHistory: () => void;
   onPublish: () => void;
+  onDelete: () => void;
 }) {
   return (
     <View
@@ -201,6 +202,16 @@ function ComponentTile({
         />
         <StudioButton theme={theme} title="New version" icon="Plus" small disabled={disabled} onPress={onVersion} />
         <StudioButton theme={theme} title="Versions" icon="History" small onPress={onHistory} />
+        <StudioButton
+          theme={theme}
+          title={`Delete component ${definition.name}`}
+          icon="Trash2"
+          small
+          iconOnly
+          danger
+          disabled={disabled}
+          onPress={onDelete}
+        />
       </View>
     </View>
   );
@@ -251,6 +262,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [deleting, setDeleting] = useState<ComponentDefinition | null>(null);
 
   const query = useQuery({
     queryKey: componentLibraryQueryKey,
@@ -545,7 +557,6 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: compact ? 16 : 24, gap: 17 }}
       >
-        <AgentConnectionCard theme={theme} />
         {error || query.error ? (
           <View
             style={{ padding: 12, gap: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.statusDanger }}
@@ -595,7 +606,8 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
           </StudioLabel>
         ) : (
           <>
-            {codeDefinitions.length ? (
+            {/* Build and activation only matter while generated code is waiting. */}
+            {pendingCode.length || reviewing ? (
               <StudioCard
                 theme={theme}
                 title="Generated components"
@@ -740,6 +752,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
                       setDialog("versions");
                     }}
                     onPublish={() => openPublish(definition)}
+                    onDelete={() => setDeleting(definition)}
                   />
                 ))}
               </View>
@@ -770,6 +783,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
               Preview actions stay local. Use in agent publishes an interactive instance to the real chat. Favorites
               keep reusable components easy to find.
             </StudioLabel>
+            <AgentConnectionCard theme={theme} />
           </>
         )}
       </ScrollView>
@@ -1118,6 +1132,19 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
           ) : null}
         </Modal.Content>
       </Modal>
+      <DeleteComponentDialog
+        theme={theme}
+        definition={deleting}
+        library={library}
+        onClose={() => setDeleting(null)}
+        onDeleted={result => {
+          acceptLibrary(result.library);
+          setNotice(
+            `${deleting?.name ?? "The component"} was deleted${result.removedInstances ? ` with ${result.removedInstances} published ${result.removedInstances === 1 ? "card" : "cards"}` : ""}.`,
+          );
+          setDeleting(null);
+        }}
+      />
     </View>
   );
 }
