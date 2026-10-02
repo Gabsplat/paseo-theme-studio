@@ -8,6 +8,7 @@ import { RevisionConflict, StudioStore } from "./store";
 import { packInstructions, toolDefinitions } from "./capabilities";
 import { componentTriggerInstructions } from "../shared/component-trigger-policy";
 import { AgentOwners } from "./agent-owners";
+import { defaultDesignerModel, defaultDesignerProvider } from "../shared/designer";
 
 const sessionSchema = z.object({ agentId: z.string().uuid(), workspaceId: z.string() }).strict();
 type Session = z.infer<typeof sessionSchema>;
@@ -119,10 +120,8 @@ export class Designer {
     }
     const session = { agentId: saved?.agentId ?? randomUUID(), workspaceId: workspace.id };
     await this.persistSession(session);
-    const provider = input.provider?.trim() || "codex";
-    const model =
-      input.model?.trim() ||
-      (provider === "codex" ? "gpt-6.1-sol" : provider === "opencode" ? "opencode/claude-sonnet-4-6" : "default");
+    const provider = input.provider?.trim() || defaultDesignerProvider;
+    const model = input.model?.trim() || defaultDesignerModel(provider);
     if (!/^[a-z0-9][a-z0-9._-]*$/i.test(provider) || model.length > 200 || /[\r\n]/.test(model))
       throw new Error("Choose a valid provider and model.");
     const tools = toolDefinitions.map(tool => tool.name);

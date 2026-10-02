@@ -17,6 +17,7 @@ import { AgentOwners, ownerTokenEnvironment } from "./server/agent-owners";
 import { componentTriggerCatalog } from "./server/component-triggers";
 import { assertComponentTarget } from "./server/component-access";
 import { pruneMissingAgents } from "./server/maintenance";
+import { cliPath, resolvePaseoCli } from "./server/paseo-cli";
 import { readAgentConnection, changeAgentConnection, readAgentMcpSetup } from "./shared/agent-connection";
 import * as components from "./shared/component-rpc";
 import { z } from "zod";
@@ -196,12 +197,15 @@ export default function contribute(server: PluginServerContext) {
   });
   server.handle(components.activateComponentBuild, async (input, context) => {
     bind(context);
+    // Resolve before activating so a missing CLI cannot leave activated code unloaded.
+    const paseoCli = resolvePaseoCli();
     const result = await componentService.activateBuild(input);
     // Reply before reloading this worker. The user confirmed the source review; the build passed typecheck.
     setTimeout(() => {
-      const child = spawn("paseo", ["plugin", "reload", "theme-studio", "--home", dirname(directory)], {
+      const child = spawn(paseoCli, ["plugin", "reload", "theme-studio", "--home", dirname(directory)], {
         detached: true,
         stdio: "ignore",
+        env: { ...process.env, PATH: cliPath() },
       });
       child.on("error", error => console.error("Component reload failed:", error.message));
       child.unref();

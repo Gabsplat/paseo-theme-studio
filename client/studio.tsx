@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { changeStudio, exportPack, readStudio, startDesigner } from "../shared/rpc";
+import { defaultDesignerModel, defaultDesignerProvider } from "../shared/designer";
 import {
   colorKeys,
   colorLabels,
@@ -296,8 +297,8 @@ export function ThemeStudio(props: StudioProps) {
   const [json, setJson] = useState("");
   const [exportRevision, setExportRevision] = useState(0);
   const [copiedInstall, setCopiedInstall] = useState(false);
-  const [provider, setProvider] = useState("codex");
-  const [model, setModel] = useState("gpt-6.1-sol");
+  const [provider, setProvider] = useState(defaultDesignerProvider);
+  const [model, setModel] = useState(() => defaultDesignerModel(defaultDesignerProvider));
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const compact = layout.compact || (width > 0 && width < 820);
@@ -1365,7 +1366,11 @@ export function ThemeStudio(props: StudioProps) {
               <TextInput
                 accessibilityLabel="Designer provider"
                 value={provider}
-                onChangeText={setProvider}
+                onChangeText={next => {
+                  // Keep a custom model, but follow the default when the user has not changed it.
+                  if (model === defaultDesignerModel(provider.trim())) setModel(defaultDesignerModel(next.trim()));
+                  setProvider(next);
+                }}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={inputStyle}
