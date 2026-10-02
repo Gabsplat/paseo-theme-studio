@@ -381,6 +381,30 @@ export class ComponentService {
     });
     return { library, definition };
   }
+  /**
+   * Deletes every version of a component, its favorite flag, and its published instances.
+   * Chat rows that pointed at those instances render as deleted.
+   */
+  async deleteComponent(input: { expectedRevision: number; id: string }) {
+    const { library, result } = await this.mutate(input.expectedRevision, library => {
+      if (!library.definitions.some(item => item.id === input.id)) throw new Error("Component was not found.");
+      const removedKeys = new Set(
+        library.definitions.filter(item => item.id === input.id).map(item => `${item.id}@${item.version}`),
+      );
+      const before = library.instances.length;
+      library.definitions = library.definitions.filter(item => item.id !== input.id);
+      library.instances = library.instances.filter(instance => instance.componentId !== input.id);
+      library.favorites = library.favorites.filter(id => id !== input.id);
+      library.activeKeys = library.activeKeys.filter(key => !removedKeys.has(key));
+      // Builds that include a deleted version can no longer be activated.
+      const stale = library.builds.filter(build => build.keys.some(key => removedKeys.has(key)));
+      library.builds = library.builds.filter(build => !stale.includes(build));
+      return { removedInstances: before - library.instances.length, staleBuilds: stale.map(build => build.id) };
+    });
+    for (const id of result.staleBuilds)
+      await rm(join(this.directory, "component-builds", id), { recursive: true, force: true });
+    return { library, removedInstances: result.removedInstances };
+  }
   async setFavorite(input: { expectedRevision: number; id: string; favorite: boolean }) {
     return (
       await this.mutate(input.expectedRevision, library => {

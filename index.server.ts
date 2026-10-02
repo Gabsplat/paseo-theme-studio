@@ -191,6 +191,10 @@ export default function contribute(server: PluginServerContext) {
       favorite: input.favorite,
     });
   });
+  server.handle(components.deleteComponent, (input, context) => {
+    bind(context);
+    return componentService.deleteComponent({ expectedRevision: input.expectedRevision, id: input.componentId });
+  });
   server.handle(components.buildComponents, (input, context) => {
     bind(context);
     return componentService.build(input);

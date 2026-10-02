@@ -618,3 +618,37 @@ test("delivered events are trimmed while undelivered events are never dropped", 
   assert.equal((await service.removeAgentInstances(["agent-events"])) as number, 1);
   assert.equal((await service.read()).instances.length, 0);
 });
+
+test("deleting a component removes all versions, favorites, instances, and stale builds", async t => {
+  const { service } = await fixture(t);
+  let library = (await service.createComposition({ expectedRevision: 0, id: "old-card", name: "Old", tree })).library;
+  library = (
+    await service.createComposition({ expectedRevision: library.revision, id: "old-card", name: "Old 2", tree })
+  ).library;
+  library = (
+    await service.createComposition({ expectedRevision: library.revision, id: "kept-card", name: "Kept", tree })
+  ).library;
+  library = await service.setFavorite({ expectedRevision: library.revision, id: "old-card", favorite: true });
+  const created = await service.createInstance({
+    expectedRevision: library.revision,
+    componentId: "old-card",
+    agentId: "agent-delete",
+  });
+  await assert.rejects(
+    service.deleteComponent({ expectedRevision: created.library.revision - 1, id: "old-card" }),
+    ComponentRevisionConflict,
+  );
+  const deleted = await service.deleteComponent({ expectedRevision: created.library.revision, id: "old-card" });
+  assert.equal(deleted.removedInstances, 1);
+  assert.deepEqual(
+    deleted.library.definitions.map(item => item.id),
+    ["kept-card"],
+  );
+  assert.deepEqual(deleted.library.favorites, []);
+  assert.equal(deleted.library.instances.length, 0);
+  await assert.rejects(service.readInstance(created.instance.id), /not found/);
+  await assert.rejects(
+    service.deleteComponent({ expectedRevision: deleted.library.revision, id: "old-card" }),
+    /not found/,
+  );
+});

@@ -55,6 +55,11 @@ export const createCodeComponent = defineRpc({
   input: componentCodeSchema,
   output: created,
 });
+export const deleteComponent = defineRpc({
+  name: "component.delete",
+  input: z.object({ expectedRevision: z.number().int().nonnegative(), componentId: componentIdSchema }),
+  output: z.object({ library: componentLibrarySchema, removedInstances: z.number().int().nonnegative() }),
+});
 export const favoriteComponent = defineRpc({
   name: "component.favorite",
   input: z.object({
