@@ -181,6 +181,9 @@ importers:
       playwright:
         specifier: ^1.63.0
         version: 1.63.0
+      prettier:
+        specifier: ^3.9.9
+        version: 3.9.9
       react:
         specifier: 19.1.0
         version: 19.1.0
@@ -1319,6 +1322,11 @@ packages:
   playwright@1.63.0:
     resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
     engines: {node: '>=20'}
+    hasBin: true
+
+  prettier@3.9.9:
+    resolution: {integrity: sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg==}
+    engines: {node: '>=14'}
     hasBin: true
 
   pretty-format@29.7.0:
@@ -2875,6 +2883,8 @@ snapshots:
   playwright@1.63.0:
     dependencies:
       playwright-core: 1.63.0
+
+  prettier@3.9.9: {}
 
   pretty-format@29.7.0:
     dependencies:

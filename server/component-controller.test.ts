@@ -14,40 +14,124 @@ async function fixture(t: { after(callback: () => Promise<void>): void }) {
   const service = new ComponentService(directory);
   const studio = new StudioStore(directory);
   const initial = await studio.read();
-  await studio.mutate(initial.revision, document => ({ ...document, designerAgentId: "designer-owner", designerWorkspaceId: "designer-workspace" }));
+  await studio.mutate(initial.revision, document => ({
+    ...document,
+    designerAgentId: "designer-owner",
+    designerWorkspaceId: "designer-workspace",
+  }));
   const studioBefore = await readFile(studio.file, "utf8");
-  const created = await service.createComposition({ expectedRevision: 0, id: "payment-form", name: "Payment form", tree: { type: "stack", children: [{ type: "input", label: "Amount", stateKey: "amount", action: "amount-changed" }, { type: "button", label: "Register", action: "register-payment" }] } });
-  const status = { value: "idle", turnId: "native-turn", startedAt: "2026-10-02T00:00:00.000Z" as string | null, archived: false, permission: false, unavailable: false, finishedAttention: false };
+  const created = await service.createComposition({
+    expectedRevision: 0,
+    id: "payment-form",
+    name: "Payment form",
+    tree: {
+      type: "stack",
+      children: [
+        { type: "input", label: "Amount", stateKey: "amount", action: "amount-changed" },
+        { type: "button", label: "Register", action: "register-payment" },
+      ],
+    },
+  });
+  const status = {
+    value: "idle",
+    turnId: "native-turn",
+    startedAt: "2026-10-02T00:00:00.000Z" as string | null,
+    archived: false,
+    permission: false,
+    unavailable: false,
+    finishedAttention: false,
+  };
   const timeline: Array<{ owner: string; item: any }> = [];
   const canonical: Array<{ owner: string; item: any; turnId?: string }> = [];
   const sendRequests: Array<{ owner: string; text: string; messageId: string }> = [];
   const delivered = new Set<string>();
   const paseo = {
-    agents: { ref: (owner: string) => ({
-      id: owner,
-      get archivedAt() { return status.archived ? "2026-01-01T00:00:00Z" : null; },
-      get status() { return status.value; },
-      get activeTurn() { return status.value === "running" ? { turnId: status.turnId, startedAt: status.startedAt } : null; },
-      get pendingPermissions() { return status.permission ? [{ id: "permission-request" }] : []; },
-      refresh: async () => ({ agent: { providerUnavailable: status.unavailable, requiresAttention: status.permission || status.finishedAttention, attentionReason: status.permission ? "permission" : status.finishedAttention ? "finished" : null } }),
-      timeline: {
-        append: async (item: any) => { timeline.push({ owner, item }); canonical.push({ owner, item: { ...item, pluginId: "theme-studio" }, turnId: status.turnId }); return { seq: timeline.length, epoch: "native-epoch" }; },
-        refetch: async () => ({ agentId: owner, error: null, staleCursor: false, hasOlder: false, startCursor: null, entries: canonical.filter(entry => entry.owner === owner).map(entry => ({ item: entry.item, turnId: entry.turnId })) }),
-      },
-      send: async (text: string, options: { messageId: string }) => {
-        sendRequests.push({ owner, text, messageId: options.messageId });
-        if (!delivered.has(options.messageId)) { delivered.add(options.messageId); status.value = "running"; canonical.push({ owner, item: { type: "user_message", text, clientMessageId: options.messageId }, turnId: status.turnId }); }
-      },
-    }) },
+    agents: {
+      ref: (owner: string) => ({
+        id: owner,
+        get archivedAt() {
+          return status.archived ? "2026-01-01T00:00:00Z" : null;
+        },
+        get status() {
+          return status.value;
+        },
+        get activeTurn() {
+          return status.value === "running" ? { turnId: status.turnId, startedAt: status.startedAt } : null;
+        },
+        get pendingPermissions() {
+          return status.permission ? [{ id: "permission-request" }] : [];
+        },
+        refresh: async () => ({
+          agent: {
+            providerUnavailable: status.unavailable,
+            requiresAttention: status.permission || status.finishedAttention,
+            attentionReason: status.permission ? "permission" : status.finishedAttention ? "finished" : null,
+          },
+        }),
+        timeline: {
+          append: async (item: any) => {
+            timeline.push({ owner, item });
+            canonical.push({ owner, item: { ...item, pluginId: "theme-studio" }, turnId: status.turnId });
+            return { seq: timeline.length, epoch: "native-epoch" };
+          },
+          refetch: async () => ({
+            agentId: owner,
+            error: null,
+            staleCursor: false,
+            hasOlder: false,
+            startCursor: null,
+            entries: canonical
+              .filter(entry => entry.owner === owner)
+              .map(entry => ({ item: entry.item, turnId: entry.turnId })),
+          }),
+        },
+        send: async (text: string, options: { messageId: string }) => {
+          sendRequests.push({ owner, text, messageId: options.messageId });
+          if (!delivered.has(options.messageId)) {
+            delivered.add(options.messageId);
+            status.value = "running";
+            canonical.push({
+              owner,
+              item: { type: "user_message", text, clientMessageId: options.messageId },
+              turnId: status.turnId,
+            });
+          }
+        },
+      }),
+    },
   } as unknown as PluginHandlerContext["paseo"];
   const controller = new ComponentController(service, studio);
   controller.bind(paseo);
-  t.after(async () => { await controller.close(); await service.close(); await studio.close(); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => {
+    await controller.close();
+    await service.close();
+    await studio.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   async function publish(owner?: string): Promise<ComponentInstance> {
     const library = await service.read();
-    return (await controller.publish({ expectedRevision: library.revision, componentId: created.definition.id, ...(owner ? { agentId: owner } : {}), state: { amount: 0 } })).instance;
+    return (
+      await controller.publish({
+        expectedRevision: library.revision,
+        componentId: created.definition.id,
+        ...(owner ? { agentId: owner } : {}),
+        state: { amount: 0 },
+      })
+    ).instance;
   }
-  return { controller, service, studio, studioBefore, status, timeline, canonical, sendRequests, delivered, paseo, publish };
+  return {
+    controller,
+    service,
+    studio,
+    studioBefore,
+    status,
+    timeline,
+    canonical,
+    sendRequests,
+    delivered,
+    paseo,
+    publish,
+  };
 }
 
 test("publishing a validated composition immediately appends one native pointer row owned by the chosen agent", async t => {
@@ -55,14 +139,32 @@ test("publishing a validated composition immediately appends one native pointer 
   const { controller, service, studio, studioBefore, timeline, sendRequests, publish } = fixtureData;
   const instance = await publish();
   assert.equal(instance.agentId, "designer-owner");
-  assert.deepEqual(timeline, [{ owner: "designer-owner", item: { type: "plugin", id: instance.id, kind: "studio-component", version: 1, data: { instanceId: instance.id, componentId: instance.componentId, componentVersion: instance.componentVersion } } }]);
+  assert.deepEqual(timeline, [
+    {
+      owner: "designer-owner",
+      item: {
+        type: "plugin",
+        id: instance.id,
+        kind: "studio-component",
+        version: 1,
+        data: {
+          instanceId: instance.id,
+          componentId: instance.componentId,
+          componentVersion: instance.componentVersion,
+        },
+      },
+    },
+  ]);
   assert.equal(sendRequests.length, 0);
   const explicit = await publish("other-explicit-owner");
   assert.equal(explicit.agentId, "other-explicit-owner");
   assert.equal(timeline[1].owner, "other-explicit-owner");
   assert.equal((await controller.listInstance(instance.id)).definition.mode, "composition");
   const library = await service.read();
-  await assert.rejects(controller.publish({ expectedRevision: library.revision - 1, componentId: instance.componentId }), ComponentRevisionConflict);
+  await assert.rejects(
+    controller.publish({ expectedRevision: library.revision - 1, componentId: instance.componentId }),
+    ComponentRevisionConflict,
+  );
   assert.equal(timeline.length, 2);
   assert.equal(await readFile(studio.file, "utf8"), studioBefore);
 });
@@ -70,8 +172,16 @@ test("publishing a validated composition immediately appends one native pointer 
 test("code components require an active validated version before any instance or timeline row is created", async t => {
   const { controller, service, timeline } = await fixture(t);
   const before = await service.read();
-  const code = await service.createCode({ expectedRevision: before.revision, id: "code-card", name: "Code card", code: 'import { View } from "react-native"; export default function Component() { return <View />; }' });
-  await assert.rejects(controller.publish({ expectedRevision: code.library.revision, componentId: code.definition.id }), /Build and load/);
+  const code = await service.createCode({
+    expectedRevision: before.revision,
+    id: "code-card",
+    name: "Code card",
+    code: 'import { View } from "react-native"; export default function Component() { return <View />; }',
+  });
+  await assert.rejects(
+    controller.publish({ expectedRevision: code.library.revision, componentId: code.definition.id }),
+    /Build and load/,
+  );
   assert.equal((await service.read()).instances.length, 0);
   assert.equal(timeline.length, 0);
 });
@@ -79,14 +189,29 @@ test("code components require an active validated version before any instance or
 test("state-only input records local data without a model turn; submission routes typed data and agent state updates cannot loop", async t => {
   const { controller, service, studio, studioBefore, sendRequests, publish } = await fixture(t);
   let instance = await publish();
-  const input = await controller.interact({ instanceId: instance.id, expectedRevision: instance.revision, action: { action: "__state__", patch: { amount: 1200, currency: "BRL" } } });
+  const input = await controller.interact({
+    instanceId: instance.id,
+    expectedRevision: instance.revision,
+    action: { action: "__state__", patch: { amount: 1200, currency: "BRL" } },
+  });
   assert.equal(input.delivery, "state-only");
   assert.equal(input.instance.state.amount, 1200);
   assert.ok(input.event.dispatchedAt);
   assert.equal(sendRequests.length, 0);
-  await assert.rejects(controller.interact({ instanceId: instance.id, expectedRevision: instance.revision, action: { action: "register-payment" } }), ComponentRevisionConflict);
+  await assert.rejects(
+    controller.interact({
+      instanceId: instance.id,
+      expectedRevision: instance.revision,
+      action: { action: "register-payment" },
+    }),
+    ComponentRevisionConflict,
+  );
   instance = input.instance;
-  const submitted = await controller.interact({ instanceId: instance.id, expectedRevision: instance.revision, action: { action: "register-payment", value: { account: "cash", amount: 1200 } } });
+  const submitted = await controller.interact({
+    instanceId: instance.id,
+    expectedRevision: instance.revision,
+    action: { action: "register-payment", value: { account: "cash", amount: 1200 } },
+  });
   assert.equal(submitted.delivery, "dispatched");
   assert.equal(sendRequests.length, 1);
   assert.equal(sendRequests[0].messageId, submitted.event.id);
@@ -94,10 +219,17 @@ test("state-only input records local data without a model turn; submission route
   assert.deepEqual(payload.action.value, { account: "cash", amount: 1200 });
   assert.equal(payload.stateAtEvent.amount, 1200);
   assert.equal(submitted.instance.state.result, undefined);
-  const answered = await controller.updateState({ instanceId: instance.id, expectedRevision: submitted.instance.revision, state: { ...submitted.instance.state, result: { status: "recorded", reference: "txn-1" } } });
+  const answered = await controller.updateState({
+    instanceId: instance.id,
+    expectedRevision: submitted.instance.revision,
+    state: { ...submitted.instance.state, result: { status: "recorded", reference: "txn-1" } },
+  });
   assert.deepEqual(answered.state.result, { status: "recorded", reference: "txn-1" });
   assert.equal(answered.events.length, 2);
-  await assert.rejects(controller.updateState({ instanceId: instance.id, expectedRevision: submitted.instance.revision, state: {} }), ComponentRevisionConflict);
+  await assert.rejects(
+    controller.updateState({ instanceId: instance.id, expectedRevision: submitted.instance.revision, state: {} }),
+    ComponentRevisionConflict,
+  );
   await controller.drain();
   assert.equal(sendRequests.length, 1);
   assert.equal((await service.readInstance(instance.id)).events.length, 2);
@@ -108,8 +240,16 @@ test("busy and permission-blocked owners retain explicit events, then concurrent
   const { controller, service, status, sendRequests, delivered, paseo, studio, publish } = await fixture(t);
   const instance = await publish();
   status.value = "running";
-  const first = await controller.interact({ instanceId: instance.id, expectedRevision: instance.revision, action: { action: "register-payment", value: 1 } });
-  const second = await controller.interact({ instanceId: instance.id, expectedRevision: first.instance.revision, action: { action: "register-payment", value: 2 } });
+  const first = await controller.interact({
+    instanceId: instance.id,
+    expectedRevision: instance.revision,
+    action: { action: "register-payment", value: 1 },
+  });
+  const second = await controller.interact({
+    instanceId: instance.id,
+    expectedRevision: first.instance.revision,
+    action: { action: "register-payment", value: 2 },
+  });
   assert.equal(first.delivery, "queued");
   assert.equal(second.delivery, "queued");
   assert.equal(sendRequests.length, 0);
@@ -138,8 +278,18 @@ test("SDK message IDs deduplicate a retry after delivery succeeds but the persis
   const instance = await publish();
   const markDispatched = service.markDispatched.bind(service);
   let failMarker = true;
-  service.markDispatched = async input => { if (failMarker) { failMarker = false; throw new Error("Temporary marker write failure"); } return markDispatched(input); };
-  const submitted = await controller.interact({ instanceId: instance.id, expectedRevision: instance.revision, action: { action: "register-payment" } });
+  service.markDispatched = async input => {
+    if (failMarker) {
+      failMarker = false;
+      throw new Error("Temporary marker write failure");
+    }
+    return markDispatched(input);
+  };
+  const submitted = await controller.interact({
+    instanceId: instance.id,
+    expectedRevision: instance.revision,
+    action: { action: "register-payment" },
+  });
   assert.equal(submitted.delivery, "unavailable");
   assert.match(submitted.error ?? "", /marker write failure/);
   assert.equal(submitted.event.dispatchedAt, null);
@@ -154,17 +304,37 @@ test("SDK message IDs deduplicate a retry after delivery succeeds but the persis
 test("a three-option interaction keeps decisions and processing/result feedback in agent-owned component state", async t => {
   const { controller, service, studio, studioBefore, sendRequests } = await fixture(t);
   const library = await service.read();
-  const created = await service.createComposition({ expectedRevision: library.revision, id: "choose-next-step", name: "Choose next step", tree: { type: "stack", children: [
-    { type: "button", label: "Research", action: "choose", value: "research" },
-    { type: "button", label: "Compare", action: "choose", value: "compare" },
-    { type: "button", label: "Summarize", action: "choose", value: "summarize" },
-    { type: "stat", label: "Next step", value: "Choose an option", stateKey: "feedback" },
-  ] } });
-  const published = await controller.publish({ expectedRevision: created.library.revision, componentId: created.definition.id, state: { note: "Keep this input", processing: false, feedback: "Choose an option" } });
-  const clicked = await controller.interact({ instanceId: published.instance.id, expectedRevision: published.instance.revision, action: { action: "choose", value: "compare" } });
+  const created = await service.createComposition({
+    expectedRevision: library.revision,
+    id: "choose-next-step",
+    name: "Choose next step",
+    tree: {
+      type: "stack",
+      children: [
+        { type: "button", label: "Research", action: "choose", value: "research" },
+        { type: "button", label: "Compare", action: "choose", value: "compare" },
+        { type: "button", label: "Summarize", action: "choose", value: "summarize" },
+        { type: "stat", label: "Next step", value: "Choose an option", stateKey: "feedback" },
+      ],
+    },
+  });
+  const published = await controller.publish({
+    expectedRevision: created.library.revision,
+    componentId: created.definition.id,
+    state: { note: "Keep this input", processing: false, feedback: "Choose an option" },
+  });
+  const clicked = await controller.interact({
+    instanceId: published.instance.id,
+    expectedRevision: published.instance.revision,
+    action: { action: "choose", value: "compare" },
+  });
   assert.equal(clicked.delivery, "dispatched");
   assert.equal(clicked.instance.state.processing, false, "The controller must not invent agent progress.");
-  assert.equal(clicked.instance.state.result, undefined, "The backend cannot decide the selected option's domain result.");
+  assert.equal(
+    clicked.instance.state.result,
+    undefined,
+    "The backend cannot decide the selected option's domain result.",
+  );
   const request = sendRequests[0];
   assert.equal(request.messageId, clicked.event.id);
   assert.match(request.text, /component instance and definition/);
@@ -175,14 +345,37 @@ test("a three-option interaction keeps decisions and processing/result feedback 
   const payload = JSON.parse(request.text.slice(request.text.indexOf('{"type":')));
   assert.equal(payload.agentId, published.instance.agentId);
   assert.deepEqual(payload.action, { action: "choose", value: "compare" });
-  const working = await controller.updateState({ instanceId: clicked.instance.id, expectedRevision: clicked.instance.revision, state: { ...clicked.instance.state, processing: true, feedback: "Comparing the options…" } });
-  await assert.rejects(controller.updateState({ instanceId: working.id, expectedRevision: clicked.instance.revision, state: { result: "stale" } }), ComponentRevisionConflict);
-  const completed = await controller.updateState({ instanceId: working.id, expectedRevision: working.revision, state: { ...working.state, processing: false, feedback: "Comparison ready", result: { selected: "compare", explanation: "Agent-decided result" } } });
+  const working = await controller.updateState({
+    instanceId: clicked.instance.id,
+    expectedRevision: clicked.instance.revision,
+    state: { ...clicked.instance.state, processing: true, feedback: "Comparing the options…" },
+  });
+  await assert.rejects(
+    controller.updateState({
+      instanceId: working.id,
+      expectedRevision: clicked.instance.revision,
+      state: { result: "stale" },
+    }),
+    ComponentRevisionConflict,
+  );
+  const completed = await controller.updateState({
+    instanceId: working.id,
+    expectedRevision: working.revision,
+    state: {
+      ...working.state,
+      processing: false,
+      feedback: "Comparison ready",
+      result: { selected: "compare", explanation: "Agent-decided result" },
+    },
+  });
   assert.equal(completed.state.note, "Keep this input");
   assert.equal(completed.events.length, 1);
   await controller.drain();
   assert.equal(sendRequests.length, 1);
-  assert.deepEqual((await service.readInstance(completed.id)).state.result, { selected: "compare", explanation: "Agent-decided result" });
+  assert.deepEqual((await service.readInstance(completed.id)).state.result, {
+    selected: "compare",
+    explanation: "Agent-decided result",
+  });
   assert.equal(await readFile(studio.file, "utf8"), studioBefore);
 });
 
@@ -192,7 +385,12 @@ test("a public lifecycle hook can bind headless MCP publication without opening 
   const context: PluginHookContext = { paseo, signal: new AbortController().signal };
   headless.bindContext(context);
   const library = await service.read();
-  const created = await headless.publish({ expectedRevision: library.revision, componentId: "payment-form", agentId: "existing-native-agent", state: { amount: 20 } });
+  const created = await headless.publish({
+    expectedRevision: library.revision,
+    componentId: "payment-form",
+    agentId: "existing-native-agent",
+    state: { amount: 20 },
+  });
   assert.equal(created.instance.agentId, "existing-native-agent");
   assert.equal(timeline.at(-1)?.owner, "existing-native-agent");
   assert.equal(sendRequests.length, 0);
@@ -203,16 +401,28 @@ test("a public lifecycle hook can bind headless MCP publication without opening 
 async function triggeredFixture(t: { after(callback: () => Promise<void>): void }) {
   const data = await fixture(t);
   const library = await data.service.read();
-  const created = await data.service.createComposition({ expectedRevision: library.revision, id: "task-context", name: "Task context", tree: { type: "stat", label: "Task", value: "", stateKey: "task" }, triggers: [
-    { id: "show-context", event: "agent_context", when: "When the current task benefits from seeing its context", enabled: true },
-    { id: "disabled-context", event: "tool_failed", when: "When a task needs recovery", enabled: false },
-  ] });
+  const created = await data.service.createComposition({
+    expectedRevision: library.revision,
+    id: "task-context",
+    name: "Task context",
+    tree: { type: "stat", label: "Task", value: "", stateKey: "task" },
+    triggers: [
+      {
+        id: "show-context",
+        event: "agent_context",
+        when: "When the current task benefits from seeing its context",
+        enabled: true,
+      },
+      { id: "disabled-context", event: "tool_failed", when: "When a task needs recovery", enabled: false },
+    ],
+  });
   const trigger = { componentId: created.definition.id, triggerId: "show-context", agentId: "ordinary-owner" };
   return { ...data, trigger, definition: created.definition };
 }
 
 test("trigger publication uses the public live turn, deduplicates its occurrence, and remains independent across turns and owners", async t => {
-  const { controller, service, status, trigger, timeline, sendRequests, studio, studioBefore } = await triggeredFixture(t);
+  const { controller, service, status, trigger, timeline, sendRequests, studio, studioBefore } =
+    await triggeredFixture(t);
   await assert.rejects(controller.trigger(trigger), /requires its owner's active Paseo turn/);
   status.value = "running";
   status.turnId = "actual-native-turn-one";
@@ -226,7 +436,11 @@ test("trigger publication uses the public live turn, deduplicates its occurrence
   assert.equal(repeated.reused, true);
   assert.deepEqual(repeated.instance, first.instance);
   assert.equal(timeline.length, 1);
-  const distinctOccurrence = await controller.trigger({ ...trigger, occurrenceKey: "second-task", state: { task: "Different task" } });
+  const distinctOccurrence = await controller.trigger({
+    ...trigger,
+    occurrenceKey: "second-task",
+    state: { task: "Different task" },
+  });
   assert.notEqual(distinctOccurrence.instance.id, first.instance.id);
   status.turnId = "actual-native-turn-two";
   const nextTurn = await controller.trigger(trigger);
@@ -235,14 +449,20 @@ test("trigger publication uses the public live turn, deduplicates its occurrence
   assert.equal(differentOwner.instance.agentId, "another-ordinary-owner");
   assert.notEqual(differentOwner.instance.id, nextTurn.instance.id);
   assert.equal((await service.read()).instances.length, 4);
-  assert.equal(sendRequests.length, 0, "Automatic publication must use the existing turn without invoking another model turn.");
+  assert.equal(
+    sendRequests.length,
+    0,
+    "Automatic publication must use the existing turn without invoking another model turn.",
+  );
   assert.equal(await readFile(studio.file, "utf8"), studioBefore);
 });
 
 test("concurrent trigger calls coalesce one persisted instance and native row without replacing user state", async t => {
   const { controller, service, status, trigger, timeline, sendRequests } = await triggeredFixture(t);
   status.value = "running";
-  const results = await Promise.all(Array.from({ length: 6 }, (_, index) => controller.trigger({ ...trigger, state: { task: `request-${index}` } })));
+  const results = await Promise.all(
+    Array.from({ length: 6 }, (_, index) => controller.trigger({ ...trigger, state: { task: `request-${index}` } })),
+  );
   assert.equal(new Set(results.map(result => result.instance.id)).size, 1);
   assert.equal(results.filter(result => !result.reused).length, 1);
   assert.equal((await service.read()).instances.length, 1);
@@ -254,7 +474,13 @@ test("trigger declaration, owner availability, and active code validation reject
   const { controller, service, status, trigger, timeline } = await triggeredFixture(t);
   status.value = "running";
   const before = await service.read();
-  for (const input of [{ ...trigger, triggerId: "missing-rule" }, { ...trigger, triggerId: "disabled-context" }, { ...trigger, version: 999 }, { ...trigger, agentId: "" }]) await assert.rejects(controller.trigger(input));
+  for (const input of [
+    { ...trigger, triggerId: "missing-rule" },
+    { ...trigger, triggerId: "disabled-context" },
+    { ...trigger, version: 999 },
+    { ...trigger, agentId: "" },
+  ])
+    await assert.rejects(controller.trigger(input));
   status.archived = true;
   await assert.rejects(controller.trigger(trigger), /owner agent is unavailable/);
   status.archived = false;
@@ -262,7 +488,13 @@ test("trigger declaration, owner availability, and active code validation reject
   await assert.rejects(controller.trigger(trigger), /owner agent is unavailable/);
   status.unavailable = false;
   assert.deepEqual(await service.read(), before);
-  const code = await service.createCode({ expectedRevision: before.revision, id: "triggered-code", name: "Triggered code", code: 'import { View } from "react-native"; export default function Component() { return <View />; }', triggers: [{ id: "show-context", event: "agent_context", when: "When context is useful", enabled: true }] });
+  const code = await service.createCode({
+    expectedRevision: before.revision,
+    id: "triggered-code",
+    name: "Triggered code",
+    code: 'import { View } from "react-native"; export default function Component() { return <View />; }',
+    triggers: [{ id: "show-context", event: "agent_context", when: "When context is useful", enabled: true }],
+  });
   await assert.rejects(controller.trigger({ ...trigger, componentId: code.definition.id }), /Build and load/);
   assert.equal((await service.read()).instances.length, 0);
   assert.equal(timeline.length, 0);
@@ -276,7 +508,14 @@ test("a lost append acknowledgement recovers the persisted trigger by checking i
   paseo.agents.ref = ((owner: string) => {
     const agent = originalRef(owner);
     const append = agent.timeline.append.bind(agent.timeline);
-    agent.timeline.append = async item => { const result = await append(item); if (loseAcknowledgement) { loseAcknowledgement = false; throw new Error("Lost append acknowledgement"); } return result; };
+    agent.timeline.append = async item => {
+      const result = await append(item);
+      if (loseAcknowledgement) {
+        loseAcknowledgement = false;
+        throw new Error("Lost append acknowledgement");
+      }
+      return result;
+    };
     return agent;
   }) as typeof paseo.agents.ref;
   await assert.rejects(controller.trigger(trigger), /Lost append acknowledgement/);
@@ -290,15 +529,45 @@ test("reused trigger recovery searches older canonical pages and accepts only th
   const { controller, service, status, trigger, definition, timeline, paseo } = await triggeredFixture(t);
   status.value = "running";
   const library = await service.read();
-  const saved = await service.createInstance({ expectedRevision: library.revision, componentId: definition.id, version: definition.version, agentId: trigger.agentId, trigger: { id: trigger.triggerId, event: "agent_context", turnId: status.turnId, turnStartedAt: status.startedAt, occurrenceKey: "default" } });
-  const pointer = { type: "plugin", id: saved.instance.id, pluginId: "theme-studio", kind: "studio-component", version: 1, data: { instanceId: saved.instance.id, componentId: saved.instance.componentId, componentVersion: saved.instance.componentVersion } };
+  const saved = await service.createInstance({
+    expectedRevision: library.revision,
+    componentId: definition.id,
+    version: definition.version,
+    agentId: trigger.agentId,
+    trigger: {
+      id: trigger.triggerId,
+      event: "agent_context",
+      turnId: status.turnId,
+      turnStartedAt: status.startedAt,
+      occurrenceKey: "default",
+    },
+  });
+  const pointer = {
+    type: "plugin",
+    id: saved.instance.id,
+    pluginId: "theme-studio",
+    kind: "studio-component",
+    version: 1,
+    data: {
+      instanceId: saved.instance.id,
+      componentId: saved.instance.componentId,
+      componentVersion: saved.instance.componentVersion,
+    },
+  };
   const originalRef = paseo.agents.ref.bind(paseo.agents);
   let olderReads = 0;
   paseo.agents.ref = ((owner: string) => {
     const agent = originalRef(owner);
     agent.timeline.refetch = (async (options: Parameters<typeof agent.timeline.refetch>[0]) => {
       if (options?.direction === "before") olderReads++;
-      return { agentId: owner, error: null, staleCursor: false, hasOlder: options?.direction !== "before", startCursor: { epoch: "native-epoch", seq: options?.direction === "before" ? 1 : 100 }, entries: [{ item: options?.direction === "before" ? pointer : { ...pointer, pluginId: "another-plugin" } }] };
+      return {
+        agentId: owner,
+        error: null,
+        staleCursor: false,
+        hasOlder: options?.direction !== "before",
+        startCursor: { epoch: "native-epoch", seq: options?.direction === "before" ? 1 : 100 },
+        entries: [{ item: options?.direction === "before" ? pointer : { ...pointer, pluginId: "another-plugin" } }],
+      };
     }) as unknown as typeof agent.timeline.refetch;
     return agent;
   }) as typeof paseo.agents.ref;
@@ -314,20 +583,56 @@ test("an interaction callback skips automatic triggers and ordinary user message
   const shown = await controller.trigger(trigger);
   status.value = "idle";
   status.turnId = "interaction-callback-turn";
-  const callback = await controller.interact({ instanceId: shown.instance.id, expectedRevision: shown.instance.revision, action: { action: "review-task" } });
+  const callback = await controller.interact({
+    instanceId: shown.instance.id,
+    expectedRevision: shown.instance.revision,
+    action: { action: "review-task" },
+  });
   assert.equal(callback.delivery, "dispatched");
-  await assert.rejects(controller.trigger(trigger), /skipped while handling a component interaction.*Update the existing instance/);
+  await assert.rejects(
+    controller.trigger(trigger),
+    /skipped while handling a component interaction.*Update the existing instance/,
+  );
   assert.equal(timeline.length, 1);
   assert.equal(sendRequests.length, 1);
   const library = await service.read();
-  const followup = await service.createComposition({ expectedRevision: library.revision, id: "task-followup", name: "Task followup", tree: { type: "text", text: "Followup stage" }, triggers: [{ id: "show-followup", event: "agent_context", when: "When reviewing the task leads to a distinct followup stage", enabled: true }] });
-  const nextStage = await controller.trigger({ componentId: followup.definition.id, triggerId: "show-followup", agentId: trigger.agentId });
-  assert.equal(nextStage.reused, false, "A different component can match the callback context without repeating its originating component.");
+  const followup = await service.createComposition({
+    expectedRevision: library.revision,
+    id: "task-followup",
+    name: "Task followup",
+    tree: { type: "text", text: "Followup stage" },
+    triggers: [
+      {
+        id: "show-followup",
+        event: "agent_context",
+        when: "When reviewing the task leads to a distinct followup stage",
+        enabled: true,
+      },
+    ],
+  });
+  const nextStage = await controller.trigger({
+    componentId: followup.definition.id,
+    triggerId: "show-followup",
+    agentId: trigger.agentId,
+  });
+  assert.equal(
+    nextStage.reused,
+    false,
+    "A different component can match the callback context without repeating its originating component.",
+  );
   assert.equal(timeline.length, 2);
   status.turnId = "ordinary-next-user-turn";
-  canonical.push({ owner: trigger.agentId, turnId: status.turnId, item: { type: "user_message", clientMessageId: "ordinary-user-message", text: sendRequests[0].text } });
+  canonical.push({
+    owner: trigger.agentId,
+    turnId: status.turnId,
+    item: { type: "user_message", clientMessageId: "ordinary-user-message", text: sendRequests[0].text },
+  });
   const ordinary = await controller.trigger(trigger);
-  assert.equal(ordinary.reused, false, "Only the persisted event's own native message identity can block a callback trigger.");
+  assert.equal(
+    ordinary.reused,
+    false,
+    "Only the persisted event's own native message identity can block a callback trigger.",
+  );
   assert.equal((await service.read()).instances.length, 3);
   assert.equal(sendRequests.length, 1);
 });
@@ -337,14 +642,20 @@ test("trigger CAS retries tolerate library edits but stop after a bounded number
   status.value = "running";
   const original = service.createInstance.bind(service);
   let attempts = 0;
-  service.createInstance = async input => { if (++attempts < 3) throw new ComponentRevisionConflict(input.expectedRevision + 1); return original(input); };
+  service.createInstance = async input => {
+    if (++attempts < 3) throw new ComponentRevisionConflict(input.expectedRevision + 1);
+    return original(input);
+  };
   await controller.trigger(trigger);
   assert.equal(attempts, 3);
   assert.equal(timeline.length, 1);
   status.turnId = "another-live-turn";
   const before = await service.read();
   attempts = 0;
-  service.createInstance = async input => { attempts++; throw new ComponentRevisionConflict(input.expectedRevision + 1); };
+  service.createInstance = async input => {
+    attempts++;
+    throw new ComponentRevisionConflict(input.expectedRevision + 1);
+  };
   await assert.rejects(controller.trigger(trigger), ComponentRevisionConflict);
   assert.equal(attempts, 5);
   assert.deepEqual(await service.read(), before);
@@ -357,7 +668,11 @@ test("callback verification pages past tool rows and fails closed on an unverifi
   const shown = await controller.trigger(trigger);
   status.value = "idle";
   status.turnId = "long-callback-turn";
-  await controller.interact({ instanceId: shown.instance.id, expectedRevision: shown.instance.revision, action: { action: "review-task" } });
+  await controller.interact({
+    instanceId: shown.instance.id,
+    expectedRevision: shown.instance.revision,
+    action: { action: "review-task" },
+  });
   const callback = canonical.findLast(entry => entry.item.type === "user_message")!;
   const originalRef = paseo.agents.ref.bind(paseo.agents);
   const directions: string[] = [];
@@ -366,9 +681,19 @@ test("callback verification pages past tool rows and fails closed on an unverifi
     const agent = originalRef(id);
     agent.timeline.refetch = (async (options: { direction: string }) => {
       directions.push(options.direction);
-      return { agentId: id, error: null, staleCursor: false,
-        hasOlder: options.direction === "tail", startCursor: brokenCursor ? null : { epoch: "long-history", seq: 200 },
-        entries: options.direction === "tail" ? Array.from({ length: 100 }, () => ({ item: { type: "assistant_message", text: "Tool activity" }, turnId: status.turnId })) : [callback],
+      return {
+        agentId: id,
+        error: null,
+        staleCursor: false,
+        hasOlder: options.direction === "tail",
+        startCursor: brokenCursor ? null : { epoch: "long-history", seq: 200 },
+        entries:
+          options.direction === "tail"
+            ? Array.from({ length: 100 }, () => ({
+                item: { type: "assistant_message", text: "Tool activity" },
+                turnId: status.turnId,
+              }))
+            : [callback],
       };
     }) as typeof agent.timeline.refetch;
     return agent;
@@ -377,7 +702,15 @@ test("callback verification pages past tool rows and fails closed on an unverifi
   assert.deepEqual(directions, ["tail", "before"]);
   assert.equal(timeline.length, 1);
   const library = await service.read();
-  const next = await service.createComposition({ expectedRevision: library.revision, id: "next-step", name: "Next step", tree: { type: "text", text: "Next" }, triggers: [{ id: "next-step", event: "agent_context", when: "The reviewed task needs a different next step", enabled: true }] });
+  const next = await service.createComposition({
+    expectedRevision: library.revision,
+    id: "next-step",
+    name: "Next step",
+    tree: { type: "text", text: "Next" },
+    triggers: [
+      { id: "next-step", event: "agent_context", when: "The reviewed task needs a different next step", enabled: true },
+    ],
+  });
   await controller.trigger({ componentId: next.definition.id, triggerId: "next-step", agentId: trigger.agentId });
   assert.equal(timeline.length, 2, "Long callback histories still permit another component's matching stage.");
   brokenCursor = true;
@@ -401,14 +734,22 @@ test("provider-recycled raw turn IDs remain distinct through the public turn sta
   assert.equal(timeline.length, 2);
   status.startedAt = null;
   await assert.rejects(controller.trigger(trigger), /turn's start time is unavailable/);
-  assert.equal((await service.read()).instances.length, 2, "Unknown start context must not silently reuse a prior turn.");
+  assert.equal(
+    (await service.read()).instances.length,
+    2,
+    "Unknown start context must not silently reuse a prior turn.",
+  );
 });
 
 test("unbound and archived owners surface unavailable delivery while preserving the event for a later retry", async t => {
   const { controller, service, status, sendRequests, studio, publish } = await fixture(t);
   const instance = await publish();
   const unbound = new ComponentController(service, studio);
-  const first = await unbound.interact({ instanceId: instance.id, expectedRevision: instance.revision, action: { action: "register-payment" } });
+  const first = await unbound.interact({
+    instanceId: instance.id,
+    expectedRevision: instance.revision,
+    action: { action: "register-payment" },
+  });
   assert.equal(first.delivery, "unavailable");
   assert.match(first.error ?? "", /Open Theme Studio/);
   await unbound.close();

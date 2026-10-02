@@ -11,7 +11,19 @@ test("export produces a typechecked standalone pack without agent state or tooli
   const store = new StudioStore(directory);
   try {
     const first = await store.read();
-    const draft = await store.change(first.revision, { type: "patch", name: "Editor's \"pack\"", ui: { toolCards: "bordered", panel: { enabled: true, title: "Notes", icon: "BookOpen", blocks: [{ type: "text", text: "Literal code: $(touch /tmp/never-run) <script>alert(1)</script>" }] } } });
+    const draft = await store.change(first.revision, {
+      type: "patch",
+      name: 'Editor\'s "pack"',
+      ui: {
+        toolCards: "bordered",
+        panel: {
+          enabled: true,
+          title: "Notes",
+          icon: "BookOpen",
+          blocks: [{ type: "text", text: "Literal code: $(touch /tmp/never-run) <script>alert(1)</script>" }],
+        },
+      },
+    });
     const exporter = new PackExporter(store);
     await assert.rejects(exporter.export({ expectedRevision: first.revision }), /changed elsewhere/);
     const result = await exporter.export({ expectedRevision: draft.revision });
@@ -22,8 +34,14 @@ test("export produces a typechecked standalone pack without agent state or tooli
     const pack = JSON.parse(await readFile(join(result.directory, "pack.json"), "utf8"));
     assert.deepEqual(pack, draft.current);
     assert.equal("designerAgentId" in pack, false);
-    assert.equal(result.files.some(file => /bridge|studio\.json|designer\.json/.test(file)), false);
+    assert.equal(
+      result.files.some(file => /bridge|studio\.json|designer\.json/.test(file)),
+      false,
+    );
     await assert.rejects(stat(join(result.directory, "node_modules")), { code: "ENOENT" });
     assert.equal((await store.read()).revision, draft.revision);
-  } finally { await store.close(); await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });

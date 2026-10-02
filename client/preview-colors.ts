@@ -35,5 +35,19 @@ export type PreviewColors = ReturnType<typeof previewColors>;
 
 export function previewPluginTheme(theme: StudioTheme): PluginTheme {
   const c = previewColors(theme);
-  return { colors: { surface0: c.background, surface1: c.raised, surface2: c.control, border: c.border, foreground: c.foreground, foregroundMuted: c.mutedForeground, accent: c.accent, accentForeground: c.accentForeground, statusSuccess: c.success, statusWarning: c.warning, statusDanger: c.danger } };
+  return {
+    colors: {
+      surface0: c.background,
+      surface1: c.raised,
+      surface2: c.control,
+      border: c.border,
+      foreground: c.foreground,
+      foregroundMuted: c.mutedForeground,
+      accent: c.accent,
+      accentForeground: c.accentForeground,
+      statusSuccess: c.success,
+      statusWarning: c.warning,
+      statusDanger: c.danger,
+    },
+  };
 }

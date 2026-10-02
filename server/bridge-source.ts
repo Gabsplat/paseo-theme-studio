@@ -105,4 +105,8 @@ input.on("line", line => {
 });
 `;
 
-export function makeBridgeSource(): string { return bridgeTemplate.replace("/*PACK_TOOLS*/", () => JSON.stringify(toolDefinitions)).replace("/*PACK_INSTRUCTIONS*/", () => JSON.stringify(packInstructions + "\n" + componentTriggerInstructions)); }
+export function makeBridgeSource(): string {
+  return bridgeTemplate
+    .replace("/*PACK_TOOLS*/", () => JSON.stringify(toolDefinitions))
+    .replace("/*PACK_INSTRUCTIONS*/", () => JSON.stringify(packInstructions + "\n" + componentTriggerInstructions));
+}

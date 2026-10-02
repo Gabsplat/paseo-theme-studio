@@ -20,20 +20,40 @@ These tools are the only way to change Theme Studio. Do not edit studio.json, br
 export class Designer {
   private pending: Promise<Session> | null = null;
   private readonly sessionFile: string;
-  constructor(private readonly store: StudioStore, private readonly bridge: ThemeBridge) { this.sessionFile = join(store.directory, "designer.json"); }
-  start(input: { workspaceId?: string; provider?: string; model?: string }, paseo: PluginHandlerContext["paseo"]): Promise<Session> {
+  constructor(
+    private readonly store: StudioStore,
+    private readonly bridge: ThemeBridge,
+  ) {
+    this.sessionFile = join(store.directory, "designer.json");
+  }
+  start(
+    input: { workspaceId?: string; provider?: string; model?: string },
+    paseo: PluginHandlerContext["paseo"],
+  ): Promise<Session> {
     if (this.pending) return this.pending;
     const operation = this.launch(input, paseo);
     this.pending = operation;
-    void operation.finally(() => { if (this.pending === operation) this.pending = null; }).catch(() => {});
+    void operation
+      .finally(() => {
+        if (this.pending === operation) this.pending = null;
+      })
+      .catch(() => {});
     return operation;
   }
   private async remember(session: Session) {
     for (let attempt = 0; attempt < 10; attempt++) {
       const document = await this.store.read();
       if (document.designerAgentId === session.agentId && document.designerWorkspaceId === session.workspaceId) return;
-      try { await this.store.mutate(document.revision, next => ({ ...next, designerAgentId: session.agentId, designerWorkspaceId: session.workspaceId })); return; }
-      catch (error) { if (!(error instanceof RevisionConflict)) throw error; }
+      try {
+        await this.store.mutate(document.revision, next => ({
+          ...next,
+          designerAgentId: session.agentId,
+          designerWorkspaceId: session.workspaceId,
+        }));
+        return;
+      } catch (error) {
+        if (!(error instanceof RevisionConflict)) throw error;
+      }
     }
     throw new Error("The designer was created, but the palette kept changing. Retry to reconnect it.");
   }
@@ -42,14 +62,22 @@ export class Designer {
     await writeFile(temporary, JSON.stringify(session), { mode: 0o600 });
     await rename(temporary, this.sessionFile);
   }
-  private async launch(input: { workspaceId?: string; provider?: string; model?: string }, paseo: PluginHandlerContext["paseo"]): Promise<Session> {
+  private async launch(
+    input: { workspaceId?: string; provider?: string; model?: string },
+    paseo: PluginHandlerContext["paseo"],
+  ): Promise<Session> {
     await this.bridge.ensure();
     const document = await this.store.read();
     let saved: Session | null = null;
-    if (document.designerAgentId && document.designerWorkspaceId) saved = { agentId: document.designerAgentId, workspaceId: document.designerWorkspaceId };
+    if (document.designerAgentId && document.designerWorkspaceId)
+      saved = { agentId: document.designerAgentId, workspaceId: document.designerWorkspaceId };
     if (!saved) {
-      try { saved = sessionSchema.parse(JSON.parse(await readFile(this.sessionFile, "utf8"))); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new Error("The designer session record is invalid. It has been preserved.", { cause: error }); }
+      try {
+        saved = sessionSchema.parse(JSON.parse(await readFile(this.sessionFile, "utf8")));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+          throw new Error("The designer session record is invalid. It has been preserved.", { cause: error });
+      }
     }
     if (saved) {
       const agentId = saved.agentId;
@@ -68,7 +96,11 @@ export class Designer {
       if (refreshed) saved = null;
       else saved = { ...saved, agentId: randomUUID() };
     }
-    let workspace = input.workspaceId ? paseo.workspaces.ref(input.workspaceId) : saved?.workspaceId ? paseo.workspaces.ref(saved.workspaceId) : null;
+    let workspace = input.workspaceId
+      ? paseo.workspaces.ref(input.workspaceId)
+      : saved?.workspaceId
+        ? paseo.workspaces.ref(saved.workspaceId)
+        : null;
     if (workspace) {
       const refreshed = await workspace.refresh();
       if (!refreshed || refreshed.archivingAt || !workspace.directory) {
@@ -80,19 +112,25 @@ export class Designer {
     if (!workspace) {
       const directory = join(this.store.directory, "designer-workspace");
       await mkdir(directory, { recursive: true, mode: 0o700 });
-      workspace = await paseo.workspaces.create({ title: "Theme Studio", source: { kind: "directory", path: directory } });
+      workspace = await paseo.workspaces.create({
+        title: "Theme Studio",
+        source: { kind: "directory", path: directory },
+      });
     }
     const session = { agentId: saved?.agentId ?? randomUUID(), workspaceId: workspace.id };
     await this.persistSession(session);
     const provider = input.provider?.trim() || "codex";
-    const model = input.model?.trim() || (provider === "codex" ? "gpt-6.1-sol" : provider === "opencode" ? "opencode/claude-sonnet-4-6" : "default");
-    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(provider) || model.length > 200 || /[\r\n]/.test(model)) throw new Error("Choose a valid provider and model.");
+    const model =
+      input.model?.trim() ||
+      (provider === "codex" ? "gpt-6.1-sol" : provider === "opencode" ? "opencode/claude-sonnet-4-6" : "default");
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(provider) || model.length > 200 || /[\r\n]/.test(model))
+      throw new Error("Choose a valid provider and model.");
     const tools = toolDefinitions.map(tool => tool.name);
     // The designer is independently connected even when general-agent opt-in is off.
     // Its reserved native ID is known here, before the provider launches its MCP.
     const owners = new AgentOwners(this.store.directory);
     const owner = owners.allocate();
-    await owners.bind(owner.token,session.agentId);
+    await owners.bind(owner.token, session.agentId);
     const agent = await workspace.agents.create({
       agentId: session.agentId,
       title: "Theme designer",
@@ -100,7 +138,13 @@ export class Designer {
         provider: `${provider}/${model}`,
         ...(provider === "codex" ? { thinkingOptionId: "high" } : {}),
         systemPrompt: `${systemPrompt}\nYour own Paseo agent ID is ${session.agentId}. Component publications belong to this conversation unless the user explicitly chooses another target.`,
-        mcpServers: { "theme-studio": { type: "stdio", command: process.execPath, args: [this.bridge.script, this.bridge.endpoint, owner.path] } },
+        mcpServers: {
+          "theme-studio": {
+            type: "stdio",
+            command: process.execPath,
+            args: [this.bridge.script, this.bridge.endpoint, owner.path],
+          },
+        },
         toolPolicy: { preapproved: tools.map(tool => ({ kind: "mcp" as const, server: "theme-studio", tool })) },
       },
     });
@@ -109,5 +153,7 @@ export class Designer {
     await this.remember(result);
     return result;
   }
-  async close() { if (this.pending) await this.pending.catch(() => {}); }
+  async close() {
+    if (this.pending) await this.pending.catch(() => {});
+  }
 }

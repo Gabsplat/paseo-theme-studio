@@ -9,7 +9,10 @@ import { AgentConnectionStore } from "./agent-connection";
 async function fixture(t: { after(callback: () => Promise<void>): void }) {
   const directory = await mkdtemp(join(tmpdir(), "theme-connection-"));
   const store = new AgentConnectionStore(directory);
-  t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   return { directory, store };
 }
 
@@ -21,7 +24,11 @@ test("new-agent connections remain opt-in while automatic component triggers def
   const results = await Promise.allSettled([store.change(0, true), store.change(0, false)]);
   assert.equal(results[0].status, "fulfilled");
   assert.equal(results[1].status, "rejected");
-  assert.deepEqual(await new AgentConnectionStore(directory).read(), { revision: 1, enabled: true, automaticTriggers: true });
+  assert.deepEqual(await new AgentConnectionStore(directory).read(), {
+    revision: 1,
+    enabled: true,
+    automaticTriggers: true,
+  });
   await store.change(1, false);
   assert.deepEqual(await store.read(), { revision: 2, enabled: false, automaticTriggers: true });
   assert.equal(await readFile(themeFile, "utf8"), '{"untouched":true}');
@@ -30,11 +37,19 @@ test("new-agent connections remain opt-in while automatic component triggers def
 test("automatic triggers persist independently of the connection opt-in setting", async t => {
   const { directory, store } = await fixture(t);
   assert.deepEqual(await store.change(0, undefined, false), { revision: 1, enabled: false, automaticTriggers: false });
-  assert.deepEqual(await new AgentConnectionStore(directory).read(), { revision: 1, enabled: false, automaticTriggers: false });
+  assert.deepEqual(await new AgentConnectionStore(directory).read(), {
+    revision: 1,
+    enabled: false,
+    automaticTriggers: false,
+  });
   assert.deepEqual(await store.change(1, true), { revision: 2, enabled: true, automaticTriggers: false });
   assert.deepEqual(await store.change(2, undefined, true), { revision: 3, enabled: true, automaticTriggers: true });
   assert.deepEqual(await store.change(3, false), { revision: 4, enabled: false, automaticTriggers: true });
-  assert.deepEqual(await new AgentConnectionStore(directory).read(), { revision: 4, enabled: false, automaticTriggers: true });
+  assert.deepEqual(await new AgentConnectionStore(directory).read(), {
+    revision: 4,
+    enabled: false,
+    automaticTriggers: true,
+  });
 });
 
 test("legacy connection files gain automatic triggers without changing their opt-in or revision", async t => {
@@ -45,7 +60,11 @@ test("legacy connection files gain automatic triggers without changing their opt
     assert.deepEqual(await store.read(), { revision: 9, enabled, automaticTriggers: true });
     assert.equal(await readFile(store.file, "utf8"), legacy);
     assert.deepEqual(await store.change(9, undefined, false), { revision: 10, enabled, automaticTriggers: false });
-    assert.deepEqual(await new AgentConnectionStore(directory).read(), { revision: 10, enabled, automaticTriggers: false });
+    assert.deepEqual(await new AgentConnectionStore(directory).read(), {
+      revision: 10,
+      enabled,
+      automaticTriggers: false,
+    });
   }
 });
 

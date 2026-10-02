@@ -1,0 +1,6 @@
+node_modules/
+output/
+pnpm-lock.yaml
+server/export-assets.ts
+client/generated/
+client/generated-components.tsx
