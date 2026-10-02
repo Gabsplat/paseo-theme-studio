@@ -453,6 +453,17 @@ export class ComponentController {
     return result;
   }
 
+  /** Reports whether Paseo still knows an agent. "unknown" never justifies deleting data. */
+  async agentPresence(agentId: string): Promise<"present" | "missing" | "unknown"> {
+    if (this.closed || !this.paseo) return "unknown";
+    try {
+      return (await this.paseo.agents.ref(agentId).refresh()) ? "present" : "missing";
+    } catch (error) {
+      // Paseo 0.9.2 throws this exact message for an unknown agent.
+      return error instanceof Error && error.message === `Agent not found: ${agentId}` ? "missing" : "unknown";
+    }
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     await Promise.allSettled([...this.draining.values(), ...this.publishing.values()]);

@@ -590,3 +590,31 @@ test("failed or modified code candidates cannot alter activated source or active
   );
   assert.deepEqual((await service.read()).activeKeys, []);
 });
+
+test("delivered events are trimmed while undelivered events are never dropped", async t => {
+  const { service } = await fixture(t);
+  const created = await service.createComposition({ expectedRevision: 0, id: "events-card", name: "Events", tree });
+  let { instance } = await service.createInstance({
+    expectedRevision: created.library.revision,
+    componentId: "events-card",
+    agentId: "agent-events",
+  });
+  for (let index = 0; index < 60; index++) {
+    const result = await service.interact({
+      instanceId: instance.id,
+      expectedRevision: instance.revision,
+      action: { action: "ready", value: index },
+    });
+    instance = await service.markDispatched({ instanceId: instance.id, eventId: result.event.id });
+  }
+  const pending = await service.interact({
+    instanceId: instance.id,
+    expectedRevision: instance.revision,
+    action: { action: "ready", value: "pending" },
+  });
+  const stored = await service.readInstance(instance.id);
+  assert.equal(stored.events.filter(event => event.dispatchedAt).length, 50);
+  assert.ok(stored.events.some(event => event.id === pending.event.id && event.dispatchedAt === null));
+  assert.equal((await service.removeAgentInstances(["agent-events"])) as number, 1);
+  assert.equal((await service.read()).instances.length, 0);
+});

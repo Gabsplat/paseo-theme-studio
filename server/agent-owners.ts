@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 export const ownerTokenEnvironment = "PASEO_THEME_STUDIO_OWNER_TOKEN";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -24,5 +24,29 @@ export class AgentOwners {
       const saved = JSON.parse(await readFile(file, "utf8"));
       if (saved.agentId !== agentId) throw new Error("Theme Studio owner binding belongs to another agent.");
     }
+  }
+  /** Lists recorded bindings; unreadable files are skipped. */
+  async list(): Promise<Array<{ file: string; agentId: string }>> {
+    let names: string[];
+    try {
+      names = await readdir(this.directory);
+    } catch {
+      return [];
+    }
+    const bindings: Array<{ file: string; agentId: string }> = [];
+    for (const name of names) {
+      if (!name.endsWith(".json") || !uuid.test(name.slice(0, -5))) continue;
+      const file = join(this.directory, name);
+      try {
+        const saved = JSON.parse(await readFile(file, "utf8"));
+        if (typeof saved?.agentId === "string") bindings.push({ file, agentId: saved.agentId });
+      } catch {
+        /* Skip a binding written concurrently or removed. */
+      }
+    }
+    return bindings;
+  }
+  async remove(file: string) {
+    await rm(file, { force: true });
   }
 }

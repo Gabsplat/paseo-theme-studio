@@ -1,11 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { themeSchema, type StudioTheme } from "../shared/theme";
 import { RevisionConflict, StudioStore } from "./store";
 import { exportAssets } from "./export-assets";
+import { removeOlderThan } from "./components";
+
+const failedExportRetentionMs = 7 * 24 * 60 * 60 * 1000;
 
 const exec = promisify(execFile);
 const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -51,6 +54,15 @@ export class PackExporter {
         .replace(/^-|-$/g, "")
         .slice(0, 38) || "design";
     const id = "theme-pack-" + slug;
+    // Validated exports may be installed from their directory, so only failed attempts expire.
+    await removeOlderThan(join(this.store.directory, "exports"), failedExportRetentionMs, async path => {
+      try {
+        await access(join(path, "validation.json"));
+        return false;
+      } catch {
+        return true;
+      }
+    });
     const directory = join(this.store.directory, "exports", id + "-" + randomUUID().slice(0, 8));
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const tooling = JSON.parse(await readFile(join(exportAssets.projectDirectory, "package.json"), "utf8"));

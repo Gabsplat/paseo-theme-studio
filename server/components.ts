@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -56,11 +56,10 @@ function validateLibrary(value: unknown): ComponentLibrary {
     throw new Error("Component instance IDs must be unique.");
   for (const definition of library.definitions)
     if (definition.mode === "composition") parseComponentTree(definition.tree);
+  const byKey = new Map(library.definitions.map(definition => [`${definition.id}@${definition.version}`, definition]));
   const triggerOccurrences = new Set<string>();
   for (const instance of library.instances) {
-    const definition = library.definitions.find(
-      item => item.id === instance.componentId && item.version === instance.componentVersion,
-    );
+    const definition = byKey.get(`${instance.componentId}@${instance.componentVersion}`);
     if (!definition) throw new Error("A component instance references an unknown version.");
     if (instance.trigger) {
       if (
@@ -85,12 +84,7 @@ function validateLibrary(value: unknown): ComponentLibrary {
     }
   }
   for (const key of library.activeKeys)
-    if (
-      !library.definitions.some(
-        definition => definition.mode === "code" && `${definition.id}@${definition.version}` === key,
-      )
-    )
-      throw new Error("An active code component version does not exist.");
+    if (byKey.get(key)?.mode !== "code") throw new Error("An active code component version does not exist.");
   return library;
 }
 
@@ -104,6 +98,35 @@ const allowedImports = new Set([
   "@getpaseo/plugin/client/react-native",
   "@getpaseo/plugin/client/ui",
 ]);
+const keptBuilds = 5;
+const maxPendingEvents = 200;
+const keptDeliveredEvents = 50;
+const failedCandidateRetentionMs = 7 * 24 * 60 * 60 * 1000;
+
+/** Deletes entries of `directory` last modified before the retention window. */
+export async function removeOlderThan(
+  directory: string,
+  retentionMs: number,
+  shouldRemove: (path: string) => Promise<boolean> = async () => true,
+): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch {
+    return;
+  }
+  const cutoff = Date.now() - retentionMs;
+  for (const name of names) {
+    const path = join(directory, name);
+    try {
+      if ((await stat(path)).mtimeMs < cutoff && (await shouldRemove(path)))
+        await rm(path, { recursive: true, force: true });
+    } catch {
+      /* Removed concurrently. */
+    }
+  }
+}
+
 // Native escape hatches: device APIs, URL handlers, and runtime settings.
 const restrictedNativeImports = new Set([
   "NativeModules",
@@ -368,6 +391,7 @@ export class ComponentService {
       createdAt: new Date().toISOString(),
     });
     // Saved versions are immutable, so reject a failed candidate before it can block future historical builds.
+    await removeOlderThan(join(this.directory, "component-validation"), failedCandidateRetentionMs);
     const directory = join(this.directory, "component-validation", randomUUID());
     await this.checkSources([...snapshot.definitions, candidate], directory);
     await rm(directory, { recursive: true, force: true });
@@ -440,6 +464,16 @@ export class ComponentService {
     });
     return { library, ...result };
   }
+  /** Removes instances owned by agents that no longer exist; their conversations are gone. */
+  async removeAgentInstances(agentIds: readonly string[]) {
+    if (!agentIds.length) return 0;
+    const { result } = await this.mutate(null, library => {
+      const before = library.instances.length;
+      library.instances = library.instances.filter(instance => !agentIds.includes(instance.agentId));
+      return before - library.instances.length;
+    });
+    return result;
+  }
   async readInstance(instanceId: string) {
     const instance = (await this.read()).instances.find(item => item.id === instanceId);
     if (!instance) throw new Error("Component instance was not found.");
@@ -459,12 +493,15 @@ export class ComponentService {
         state: clone(instance.state),
         dispatchedAt: null,
       };
-      if (instance.events.length >= 200) {
-        const discarded = instance.events.shift()!;
-        if (discarded.dispatchedAt === null)
-          throw new Error("Component event queue is full. Wait for the agent to catch up.");
-      }
+      if (instance.events.filter(item => item.dispatchedAt === null).length >= maxPendingEvents)
+        throw new Error("Component event queue is full. Wait for the agent to catch up.");
       instance.events.push(event);
+      // Delivered events are history; keep the most recent ones so the library stays small.
+      const delivered = instance.events.filter(item => item.dispatchedAt !== null);
+      if (delivered.length > keptDeliveredEvents) {
+        const dropped = new Set(delivered.slice(0, delivered.length - keptDeliveredEvents).map(item => item.id));
+        instance.events = instance.events.filter(item => !dropped.has(item.id));
+      }
       instance.revision++;
       return { instance, event };
     });
@@ -545,10 +582,15 @@ export class ComponentService {
       createdAt: new Date().toISOString(),
     };
     await writeFile(join(directory, "validation.json"), JSON.stringify(build, null, 2) + "\n", { mode: 0o600 });
-    const { library } = await this.mutate(snapshot.revision, library => {
+    const { library, result: dropped } = await this.mutate(snapshot.revision, library => {
       library.builds.push(build);
-      return null;
+      const dropped = library.builds.slice(0, Math.max(0, library.builds.length - keptBuilds));
+      library.builds = library.builds.slice(-keptBuilds);
+      return dropped.map(item => item.id);
     });
+    // Activation copies sources into the plugin, so older build directories are no longer needed.
+    for (const old of dropped)
+      await rm(join(this.directory, "component-builds", old), { recursive: true, force: true });
     return {
       library,
       build,

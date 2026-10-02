@@ -16,6 +16,7 @@ import { AgentConnectionStore } from "./server/agent-connection";
 import { AgentOwners, ownerTokenEnvironment } from "./server/agent-owners";
 import { componentTriggerCatalog } from "./server/component-triggers";
 import { assertComponentTarget } from "./server/component-access";
+import { pruneMissingAgents } from "./server/maintenance";
 import { readAgentConnection, changeAgentConnection, readAgentMcpSetup } from "./shared/agent-connection";
 import * as components from "./shared/component-rpc";
 import { z } from "zod";
@@ -214,11 +215,18 @@ export default function contribute(server: PluginServerContext) {
     bind(context);
     await controller.drain(event.agent.id);
   });
+  // Hourly, drop component data for agents that were deleted from Paseo.
+  const maintenanceTimer = setInterval(() => {
+    void pruneMissingAgents(controller, componentService, owners).catch(error =>
+      console.error("Theme Studio maintenance failed:", error instanceof Error ? error.message : "unknown error"),
+    );
+  }, 3600000);
   const drainTimer = setInterval(() => {
     void controller.drain().catch(() => {});
   }, 5000);
   return async () => {
     clearInterval(drainTimer);
+    clearInterval(maintenanceTimer);
     removeCreateHook();
     removeSessionHook();
     removeTurnHook();
