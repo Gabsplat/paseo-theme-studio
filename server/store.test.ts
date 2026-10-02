@@ -116,7 +116,33 @@ test("a crashed transaction without an owner record can be reclaimed", async t =
   await mkdir(lock);
   const old = new Date(Date.now() - 60000);
   await utimes(lock, old, old);
-  assert.equal((await store.read()).revision, document.revision);
+  const changed = await store.change(document.revision, { type: "patch", name: "After crash" });
+  assert.equal(changed.revision, document.revision + 1);
+});
+
+test("an old transaction is reclaimed even when its owner PID was reused by a live process", async t => {
+  const store = await fixture(t);
+  const document = await store.read();
+  const lock = join(store.directory, ".transaction");
+  await mkdir(lock);
+  // The parent process is alive, as a reused PID would be after a restart.
+  await writeFile(join(lock, "owner"), String(process.ppid));
+  const old = new Date(Date.now() - 120000);
+  await utimes(lock, old, old);
+  const changed = await store.change(document.revision, { type: "patch", name: "After reuse" });
+  assert.equal(changed.revision, document.revision + 1);
+});
+
+test("cached reads observe documents replaced by another process", async t => {
+  const store = await fixture(t);
+  const document = await store.read();
+  const other = new StudioStore(store.directory);
+  await other.change(document.revision, { type: "patch", name: "Elsewhere" });
+  const seen = await store.read();
+  assert.equal(seen.revision, document.revision + 1);
+  assert.equal(seen.current.name, "Elsewhere");
+  seen.current.name = "Mutated copy";
+  assert.equal((await store.read()).current.name, "Elsewhere");
 });
 
 test("legacy palette storage migrates into a pack without changing the active palette or revision", async t => {

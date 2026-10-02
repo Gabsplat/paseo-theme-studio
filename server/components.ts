@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, open, readFile, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -19,6 +19,7 @@ import {
   type ComponentState,
 } from "../shared/components";
 import { exportAssets } from "./export-assets";
+import { acquireLock, FileSnapshot, writeFileAtomic } from "./storage";
 
 const exec = promisify(execFile);
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -202,58 +203,27 @@ function generatedFiles(definitions: ComponentDefinition[]): Record<string, stri
 export class ComponentService {
   readonly file: string;
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly snapshot: FileSnapshot<ComponentLibrary>;
   constructor(
     readonly directory: string,
     readonly projectDirectory: string = exportAssets.projectDirectory,
   ) {
     this.file = join(directory, "components.json");
+    this.snapshot = new FileSnapshot(this.file);
   }
   private serial<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.queue.then(operation);
     this.queue = result.catch(() => {});
     return result;
   }
-  private async acquire() {
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const lock = join(this.directory, ".components-transaction");
-    for (let attempt = 0; attempt < 300; attempt++) {
-      try {
-        await mkdir(lock, { mode: 0o700 });
-        try {
-          await writeFile(join(lock, "owner"), String(process.pid), { mode: 0o600 });
-        } catch (error) {
-          await rm(lock, { recursive: true, force: true });
-          throw error;
-        }
-        return () => rm(lock, { recursive: true, force: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        try {
-          const pid = Number(await readFile(join(lock, "owner"), "utf8"));
-          if (Number.isInteger(pid) && pid > 0) {
-            try {
-              process.kill(pid, 0);
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code === "ESRCH") await rm(lock, { recursive: true, force: true });
-            }
-          }
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            try {
-              if (Date.now() - (await stat(lock)).mtimeMs > 30000) await rm(lock, { recursive: true, force: true });
-            } catch {
-              /* Another process reclaimed it. */
-            }
-          }
-        }
-        await new Promise<void>(resolve => setTimeout(resolve, 20));
-      }
-    }
-    throw new Error("Component storage is busy. Retry shortly.");
+  private acquire() {
+    return acquireLock(this.directory, ".components-transaction", "Component storage is busy. Retry shortly.", 300);
   }
   private async readDisk(): Promise<ComponentLibrary> {
+    const cached = await this.snapshot.current();
+    if (cached) return clone(cached);
     try {
-      return validateLibrary(JSON.parse(await readFile(this.file, "utf8")));
+      return clone((await this.snapshot.load(validateLibrary)).value);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT")
         throw new Error("Component storage is invalid. The existing file has been preserved.", { cause: error });
@@ -271,31 +241,18 @@ export class ComponentService {
     }
   }
   private async persist(library: ComponentLibrary) {
-    const temporary = join(this.directory, `.components-${randomUUID()}.tmp`);
-    try {
-      const handle = await open(temporary, "wx", 0o600);
-      try {
-        await handle.writeFile(JSON.stringify(validateLibrary(library), null, 2) + "\n");
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await rename(temporary, this.file);
-      const directory = await open(this.directory, "r");
-      try {
-        await directory.sync();
-      } finally {
-        await directory.close();
-      }
-    } finally {
-      await rm(temporary, { force: true });
-    }
+    const valid = validateLibrary(library);
+    await writeFileAtomic(this.directory, this.file, JSON.stringify(valid, null, 2) + "\n");
+    await this.snapshot.remember(clone(valid));
   }
   read(): Promise<ComponentLibrary> {
     return this.serial(async () => {
+      // Writers rename complete files into place, so an unchanged file needs no lock.
+      const cached = await this.snapshot.current();
+      if (cached) return clone(cached);
       const release = await this.acquire();
       try {
-        return clone(await this.readDisk());
+        return await this.readDisk();
       } finally {
         await release();
       }

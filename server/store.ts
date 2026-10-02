@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { acquireLock, FileSnapshot, writeFileAtomic } from "./storage";
 import {
   actionSchema,
   documentSchema,
@@ -171,8 +171,10 @@ export function applyAction(
 export class StudioStore {
   readonly file: string;
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly snapshot: FileSnapshot<StudioDocument>;
   constructor(readonly directory: string) {
     this.file = join(directory, "studio.json");
+    this.snapshot = new FileSnapshot(this.file);
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -181,53 +183,17 @@ export class StudioStore {
     return result;
   }
 
-  private async acquire(): Promise<() => Promise<void>> {
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const lock = join(this.directory, ".transaction");
-    for (let attempt = 0; attempt < 150; attempt++) {
-      try {
-        await mkdir(lock, { mode: 0o700 });
-        try {
-          await writeFile(join(lock, "owner"), String(process.pid), { mode: 0o600 });
-        } catch (error) {
-          await rm(lock, { recursive: true, force: true });
-          throw error;
-        }
-        return () => rm(lock, { recursive: true, force: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        try {
-          const pid = Number(await readFile(join(lock, "owner"), "utf8"));
-          if (Number.isInteger(pid) && pid > 0) {
-            try {
-              process.kill(pid, 0);
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code === "ESRCH") await rm(lock, { recursive: true, force: true });
-            }
-          }
-        } catch (error) {
-          // A crash between mkdir and writing owner must not leave storage locked forever.
-          // Give a live process ample time to publish its owner record before reclamation.
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            try {
-              if (Date.now() - (await stat(lock)).mtimeMs > 30000) await rm(lock, { recursive: true, force: true });
-            } catch {
-              /* Another process may already have reclaimed it. */
-            }
-          }
-        }
-        await new Promise<void>(resolve => setTimeout(resolve, 20));
-      }
-    }
-    throw new Error("Theme storage is busy. Retry shortly.");
+  private acquire(): Promise<() => Promise<void>> {
+    return acquireLock(this.directory, ".transaction", "Theme storage is busy. Retry shortly.");
   }
 
   private async readDisk(): Promise<StudioDocument> {
+    const cached = await this.snapshot.current();
+    if (cached) return cached;
     try {
-      const raw = JSON.parse(await readFile(this.file, "utf8"));
-      const migrated = migrateDocument(raw);
-      if (JSON.stringify(raw) !== JSON.stringify(migrated)) await this.persist(migrated);
-      return migrated;
+      const { raw, value } = await this.snapshot.load(migrateDocument);
+      if (JSON.stringify(raw) !== JSON.stringify(value)) await this.persist(value);
+      return value;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT")
         throw new Error("Theme storage is invalid. The existing file has been preserved.", { cause: error });
@@ -238,29 +204,16 @@ export class StudioStore {
   }
 
   private async persist(document: StudioDocument): Promise<void> {
-    const temporary = join(this.directory, `.studio-${randomUUID()}.tmp`);
-    try {
-      const handle = await open(temporary, "wx", 0o600);
-      try {
-        await handle.writeFile(JSON.stringify(validateDocument(document), null, 2) + "\n");
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await rename(temporary, this.file);
-      const directory = await open(this.directory, "r");
-      try {
-        await directory.sync();
-      } finally {
-        await directory.close();
-      }
-    } finally {
-      await rm(temporary, { force: true });
-    }
+    const valid = validateDocument(document);
+    await writeFileAtomic(this.directory, this.file, JSON.stringify(valid, null, 2) + "\n");
+    await this.snapshot.remember(clone(valid));
   }
 
   read(): Promise<StudioDocument> {
     return this.serial(async () => {
+      // Writers rename complete files into place, so an unchanged file needs no lock.
+      const cached = await this.snapshot.current();
+      if (cached) return clone(cached);
       const release = await this.acquire();
       try {
         return clone(await this.readDisk());
