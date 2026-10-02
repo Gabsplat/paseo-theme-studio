@@ -6,6 +6,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   componentTimelineSchema,
+  type ComponentInstance,
   type ComponentNode,
   type ComponentProps,
   type ComponentState,
@@ -172,29 +173,40 @@ class ComponentBoundary extends Component<{ children: ReactNode; theme: PluginTh
   }
 }
 
-function ComponentRow({
-  theme,
-  item,
-  agentId,
-  paseo,
-}: PluginTimelineItemProps<ComponentTimelineData> & { paseo: PluginClientContext["paseo"] }) {
+const activePollMs = 800;
+const idlePollMs = 3000;
+
+/** True while the latest interaction still awaits delivery or an agent update. */
+function awaitingAgent(instance: ComponentInstance): boolean {
+  const latest = instance.events.findLast(event => event.action.action !== "__state__");
+  return Boolean(latest && (!latest.dispatchedAt || !componentHasAgentUpdate(instance)));
+}
+
+function useInstance(instanceId: string) {
   const read = useRpc(readComponentInstance);
-  const interact = useRpc(interactComponent);
   const cache = useQueryClient();
-  const key = ["studio-component", item.data.instanceId];
+  const key = ["studio-component", instanceId];
   const query = useQuery({
     queryKey: key,
     queryFn: async () => {
-      const result = await read({ instanceId: item.data.instanceId });
+      const result = await read({ instanceId });
       componentEvents.updateInstance(result.instance);
       const previous = cache.getQueryData<typeof result>(key);
       return previous && previous.instance.revision > result.instance.revision ? previous : result;
     },
-    refetchInterval: 800,
+    // Poll quickly only while an agent response is expected; idle cards still pick up agent updates.
+    refetchInterval: current =>
+      current.state.data && awaitingAgent(current.state.data.instance) ? activePollMs : idlePollMs,
   });
-  const owner = useQuery({
+  return { query, key, cache };
+}
+
+type OwnerState = { status: string | null; archived: boolean; permissions: number };
+
+function useOwner(paseo: PluginClientContext["paseo"], agentId: string, enabled: boolean) {
+  return useQuery({
     queryKey: ["studio-component-owner", agentId],
-    queryFn: async () => {
+    queryFn: async (): Promise<OwnerState> => {
       const handle = paseo.agents.ref(agentId);
       await handle.refresh();
       return {
@@ -203,9 +215,36 @@ function ComponentRow({
         permissions: Object.keys(handle.pendingPermissions ?? {}).length,
       };
     },
-    enabled: Boolean(query.data?.instance.events.length && query.data.instance.agentId === agentId),
+    enabled,
     refetchInterval: 1500,
   });
+}
+
+function interactionFeedback(instance: ComponentInstance, owner: OwnerState | undefined): string | null {
+  const latest = instance.events.findLast(event => event.action.action !== "__state__");
+  if (!latest) return null;
+  if (owner?.archived || owner?.status === "closed") return "Reopen your agent to continue.";
+  if (owner?.permissions) return "Your agent needs your approval in chat.";
+  if (!latest.dispatchedAt) return "Waiting for your agent…";
+  if (owner?.status === "running") return "Your agent is working…";
+  if (componentHasAgentUpdate(instance)) return "Updated by your agent";
+  if (owner?.status === "error") return "Your agent needs attention in chat.";
+  return "Waiting for an update…";
+}
+
+function ComponentRow({
+  theme,
+  item,
+  agentId,
+  paseo,
+}: PluginTimelineItemProps<ComponentTimelineData> & { paseo: PluginClientContext["paseo"] }) {
+  const interact = useRpc(interactComponent);
+  const { query, key, cache } = useInstance(item.data.instanceId);
+  const owner = useOwner(
+    paseo,
+    agentId,
+    Boolean(query.data && query.data.instance.agentId === agentId && awaitingAgent(query.data.instance)),
+  );
   const [pendingPatch, setPendingPatch] = useState<ComponentState>({});
   const [notice, setNotice] = useState<string | null>(null);
   const mutation = useMutation({
@@ -275,28 +314,9 @@ function ComponentRow({
     });
   };
   const Code = generatedComponents[`${definition.id}@${definition.version}`];
-  const latest = instance.events.findLast(event => event.action.action !== "__state__");
-  const updated = componentHasAgentUpdate(instance);
   const feedback = mutation.isPending
     ? "Saving…"
-    : (notice ??
-      (Object.keys(pendingPatch).length
-        ? "Saving your input…"
-        : latest
-          ? owner.data?.archived || owner.data?.status === "closed"
-            ? "Reopen your agent to continue."
-            : owner.data?.permissions
-              ? "Your agent needs your approval in chat."
-              : !latest.dispatchedAt
-                ? "Waiting for your agent…"
-                : owner.data?.status === "running"
-                  ? "Your agent is working…"
-                  : updated
-                    ? "Updated by your agent"
-                    : owner.data?.status === "error"
-                      ? "Your agent needs attention in chat."
-                      : "Waiting for an update…"
-          : null));
+    : (notice ?? (Object.keys(pendingPatch).length ? "Saving your input…" : interactionFeedback(instance, owner.data)));
   return (
     <View
       style={{
