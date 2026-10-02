@@ -13,6 +13,8 @@ export const startDesigner = defineRpc({
     workspaceId: z.string().optional(),
     provider: z.string().optional(),
     model: z.string().optional(),
+    /** Start a new designer session instead of reopening the current one. */
+    fresh: z.boolean().optional(),
   }),
   output: z.object({ agentId: z.string(), workspaceId: z.string() }),
 });

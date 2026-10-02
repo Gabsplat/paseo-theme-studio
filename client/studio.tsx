@@ -1,4 +1,9 @@
-import type { PluginAgentPanelProps, PluginSurfaceProps, PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import type {
+  PluginAgentPanelProps,
+  PluginClientContext,
+  PluginSurfaceProps,
+  PluginWorkspacePanelProps,
+} from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { copyText, Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
@@ -6,7 +11,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { changeStudio, exportPack, readStudio, startDesigner } from "../shared/rpc";
-import { defaultDesignerModel, defaultDesignerProvider } from "../shared/designer";
 import {
   colorKeys,
   colorLabels,
@@ -29,19 +33,23 @@ import { ComponentLibrarySurface } from "./component-library";
 import { ComponentInspector, latestDefinitions, useComponentLibrary } from "./component-inspector";
 import { ComponentCard } from "./component-runtime";
 import type { ComponentState } from "../shared/components";
-import { changeStudioPreferences, readStudioPreferences } from "../shared/preferences";
+import { changeStudioPreferences, readStudioPreferences, type StudioPreferences } from "../shared/preferences";
+import { DesignerInspector, nextDesignerConfig } from "./designer-inspector";
+import { Onboarding } from "./onboarding";
 
 type StudioProps = (PluginSurfaceProps | PluginWorkspacePanelProps | PluginAgentPanelProps) & {
   onOpenPreview?: (workspaceId: string, agentId: string) => void | Promise<void>;
   onOpenPack?: (workspaceId: string, agentId?: string) => void | Promise<void>;
+  /** Paseo's agent API, used to show the designer session's details. */
+  paseo?: PluginClientContext["paseo"];
   /** Opens the full Theme Studio surface, leaving the designer chat. */
   onOpenStudio?: () => void;
   /** Reopen the designer chat when the user left it open. Only the sidebar surface does this. */
   autoOpenDesigner?: boolean;
 };
 type StudioMode = "studio" | "library";
-type Inspector = "colors" | "design" | "components" | "packs" | "history";
-type Dialog = "save" | "import" | "export" | "settings" | null;
+type Inspector = "colors" | "design" | "components" | "packs" | "designer" | "history";
+type Dialog = "save" | "import" | "export" | null;
 type StudioView = {
   view: StudioMode;
   inspector: Inspector;
@@ -221,8 +229,6 @@ export function ThemeStudio(props: StudioProps) {
   const [json, setJson] = useState("");
   const [exportRevision, setExportRevision] = useState(0);
   const [copiedInstall, setCopiedInstall] = useState(false);
-  const [provider, setProvider] = useState(defaultDesignerProvider);
-  const [model, setModel] = useState(() => defaultDesignerModel(defaultDesignerProvider));
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Beside a chat, or on small screens, the inspector moves below the preview.
@@ -242,6 +248,9 @@ export function ThemeStudio(props: StudioProps) {
   const document = query.data;
   const preferences = useQuery({ queryKey: preferencesQueryKey, queryFn: () => readPreferences({}) });
   const components = useComponentLibrary();
+  const [tourOpen, setTourOpen] = useState(false);
+  // The walkthrough opens once per host, then only from the help button.
+  const showTour = tourOpen || preferences.data?.onboardingDone === false;
 
   const update = useMutation({
     mutationFn: change,
@@ -256,9 +265,10 @@ export function ThemeStudio(props: StudioProps) {
     },
   });
 
-  async function rememberDesigner(open: boolean) {
-    queryClient.setQueryData(preferencesQueryKey, await changePreferences({ designerOpen: open }));
+  async function savePreferences(patch: Partial<StudioPreferences>) {
+    queryClient.setQueryData(preferencesQueryKey, await changePreferences(patch));
   }
+  const rememberDesigner = (open: boolean) => savePreferences({ designerOpen: open });
 
   const designer = useMutation({
     mutationFn: start,
@@ -322,7 +332,11 @@ export function ThemeStudio(props: StudioProps) {
 
   function openDesigner() {
     setError(null);
-    designer.mutate({ workspaceId, provider: provider.trim() || undefined, model: model.trim() || undefined });
+    designer.mutate({ workspaceId, ...nextDesignerConfig(preferences.data) });
+  }
+  function newDesignerSession() {
+    setError(null);
+    designer.mutate({ workspaceId, ...nextDesignerConfig(preferences.data), fresh: true });
   }
   async function closeDesigner() {
     try {
@@ -556,6 +570,24 @@ export function ThemeStudio(props: StudioProps) {
             iconOnly
             disabled={!document || busy || document.cursor >= document.history.length - 1}
             onPress={() => dispatch({ type: "redo" })}
+          />
+          <StudioButton
+            theme={theme}
+            title="Help and tour"
+            icon="CircleHelp"
+            small
+            iconOnly
+            onPress={() => setTourOpen(true)}
+          />
+          <StudioButton
+            theme={theme}
+            title="Draft history"
+            icon="History"
+            small
+            iconOnly
+            active={inspector === "history"}
+            disabled={!document}
+            onPress={() => setInspector(inspector === "history" ? "colors" : "history")}
           />
           <StudioButton
             theme={theme}
@@ -832,6 +864,21 @@ export function ThemeStudio(props: StudioProps) {
           </StudioCard>
         </>
       ) : null}
+      {inspector === "designer" ? (
+        <DesignerInspector
+          theme={theme}
+          agentId={document.designerAgentId}
+          paseo={props.paseo}
+          preferences={preferences.data}
+          busy={designer.isPending}
+          canNavigate={Boolean(props.navigation)}
+          onSavePreferences={patch => {
+            void savePreferences(patch).catch(reason => setError(messageFor(reason)));
+          }}
+          onOpen={openDesigner}
+          onNewSession={newDesignerSession}
+        />
+      ) : null}
       {inspector === "history" ? (
         <View style={{ paddingVertical: 14, gap: 2 }}>
           <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600", marginBottom: 6 }}>Draft history</Text>
@@ -902,7 +949,7 @@ export function ThemeStudio(props: StudioProps) {
             { value: "design", label: "Design" },
             { value: "components", label: "Components" },
             { value: "packs", label: "Packs" },
-            { value: "history", label: "History" },
+            { value: "designer", label: "Designer" },
           ]}
         />
       </View>
@@ -944,17 +991,23 @@ export function ThemeStudio(props: StudioProps) {
         </View>
       )}
 
+      {showTour && document ? (
+        <Onboarding
+          theme={theme}
+          pack={document.current}
+          canOpenDesigner={Boolean(props.navigation) && !besideDesigner}
+          onOpenDesigner={openDesigner}
+          onFinish={() => {
+            setTourOpen(false);
+            if (!preferences.data?.onboardingDone)
+              void savePreferences({ onboardingDone: true }).catch(reason => setError(messageFor(reason)));
+          }}
+        />
+      ) : null}
+
       <Modal
-        title={
-          dialog === "save"
-            ? "Save pack"
-            : dialog === "import"
-              ? "Import pack"
-              : dialog === "export"
-                ? "Export pack"
-                : "Designer model"
-        }
-        icon={<Icon name={dialog === "settings" ? "Settings2" : "Palette"} size={18} color={theme.colors.foreground} />}
+        title={dialog === "save" ? "Save pack" : dialog === "import" ? "Import pack" : "Export pack"}
+        icon={<Icon name="Palette" size={18} color={theme.colors.foreground} />}
         open={dialog !== null}
         onOpenChange={open => {
           if (!open) setDialog(null);
@@ -1109,37 +1162,6 @@ export function ThemeStudio(props: StudioProps) {
                     .catch(reason => setError(`Could not copy. Select the JSON and use Copy. ${messageFor(reason)}`));
                 }}
               />
-            </>
-          ) : null}
-          {dialog === "settings" ? (
-            <>
-              <StudioLabel theme={theme} subdued>
-                Choose the provider and model for a new pack designer session. The default is GPT-6.1 Sol through Codex
-                with high reasoning. Existing sessions keep their model.
-              </StudioLabel>
-              <StudioLabel theme={theme}>Provider</StudioLabel>
-              <TextInput
-                accessibilityLabel="Designer provider"
-                value={provider}
-                onChangeText={next => {
-                  // Keep a custom model, but follow the default when the user has not changed it.
-                  if (model === defaultDesignerModel(provider.trim())) setModel(defaultDesignerModel(next.trim()));
-                  setProvider(next);
-                }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={inputStyle}
-              />
-              <StudioLabel theme={theme}>Model</StudioLabel>
-              <TextInput
-                accessibilityLabel="Designer model"
-                value={model}
-                onChangeText={setModel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={inputStyle}
-              />
-              <StudioButton theme={theme} title="Done" primary onPress={() => setDialog(null)} />
             </>
           ) : null}
           {error && dialog ? (

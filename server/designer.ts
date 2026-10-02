@@ -28,7 +28,7 @@ export class Designer {
     this.sessionFile = join(store.directory, "designer.json");
   }
   start(
-    input: { workspaceId?: string; provider?: string; model?: string },
+    input: { workspaceId?: string; provider?: string; model?: string; fresh?: boolean },
     paseo: PluginHandlerContext["paseo"],
   ): Promise<Session> {
     if (this.pending) return this.pending;
@@ -64,7 +64,7 @@ export class Designer {
     await rename(temporary, this.sessionFile);
   }
   private async launch(
-    input: { workspaceId?: string; provider?: string; model?: string },
+    input: { workspaceId?: string; provider?: string; model?: string; fresh?: boolean },
     paseo: PluginHandlerContext["paseo"],
   ): Promise<Session> {
     await this.bridge.ensure();
@@ -80,7 +80,9 @@ export class Designer {
           throw new Error("The designer session record is invalid. It has been preserved.", { cause: error });
       }
     }
-    if (saved) {
+    // A fresh session keeps the designer workspace but creates a new agent; the old chat stays.
+    if (saved && input.fresh) saved = { ...saved, agentId: randomUUID() };
+    else if (saved) {
       const agentId = saved.agentId;
       const existing = paseo.agents.ref(agentId);
       const refreshed = await existing.refresh().catch(error => {

@@ -29,7 +29,6 @@ import { CompositionRenderer } from "./component-runtime";
 import { componentLibraryQueryKey, definitionKey, DeleteComponentDialog } from "./component-inspector";
 import { generatedComponents } from "./generated-components";
 import { StudioButton, StudioCard, StudioLabel } from "./studio-ui";
-import { AgentConnectionCard } from "./agent-connection";
 import { ComponentTriggersEditor, ComponentTriggersSummary, parseTriggersJson } from "./component-triggers";
 
 type ComponentLibraryProps = Pick<PluginSurfaceProps, "theme" | "layout" | "host" | "navigation"> & {
@@ -783,7 +782,6 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
               Preview actions stay local. Use in agent publishes an interactive instance to the real chat. Favorites
               keep reusable components easy to find.
             </StudioLabel>
-            <AgentConnectionCard theme={theme} />
           </>
         )}
       </ScrollView>

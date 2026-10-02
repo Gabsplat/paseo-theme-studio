@@ -130,15 +130,32 @@ export default function contribute(client: PluginClientContext) {
         onOpenPreview={openPreview}
         onOpenPack={openPack}
         onOpenStudio={openStudio}
+        paseo={client.paseo}
         autoOpenDesigner
       />
     );
   }
   function SettingsScreen(props: PluginSurfaceProps) {
-    return <ThemeStudio {...props} onOpenPreview={openPreview} onOpenPack={openPack} onOpenStudio={openStudio} />;
+    return (
+      <ThemeStudio
+        {...props}
+        onOpenPreview={openPreview}
+        onOpenPack={openPack}
+        onOpenStudio={openStudio}
+        paseo={client.paseo}
+      />
+    );
   }
   function Panel(props: PluginWorkspacePanelProps) {
-    return <ThemeStudio {...props} onOpenPreview={openPreview} onOpenPack={openPack} onOpenStudio={openStudio} />;
+    return (
+      <ThemeStudio
+        {...props}
+        onOpenPreview={openPreview}
+        onOpenPack={openPack}
+        onOpenStudio={openStudio}
+        paseo={client.paseo}
+      />
+    );
   }
   client.addSurface("studio", Surface);
   client.addSidebarItem({ id: "studio", title: "Theme Studio", icon: "Palette", surface: "studio" });

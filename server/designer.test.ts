@@ -111,4 +111,12 @@ test("designer replaces a reserved orphan ID while preserving its workspace and 
   assert.deepEqual(await designer.start({}, paseo), first);
   assert.equal(creations.length, 2);
   assert.equal((await store.read()).revision, remembered.revision);
+  const fresh = await designer.start({ fresh: true, provider: "claude", model: "opus" }, paseo);
+  assert.notEqual(fresh.agentId, first.agentId);
+  assert.equal(fresh.workspaceId, "workspace-1");
+  assert.equal(workspaceCreations, 1);
+  assert.equal(creations.at(-1)?.config.provider, "claude/opus");
+  assert.equal((await store.read()).designerAgentId, fresh.agentId);
+  assert.ok(agents.has(first.agentId), "The previous designer chat is kept.");
+  assert.deepEqual(await designer.start({}, paseo), fresh);
 });
