@@ -17,7 +17,7 @@ try {
   await page.getByText("System", { exact: true }).click();
   await page.getByText("Theme Studio · Live", { exact: true }).click();
   await page.goto(studioUrl);
-  await page.getByTestId("theme-studio").getByRole("button", { name: "Open designer chat", exact: true }).click();
+  await page.getByTestId("theme-studio").getByRole("button", { name: "Designer", exact: true }).click();
   await page.waitForURL(/\/workspace\//);
   await page.waitForTimeout(1500);
   const handles = await page.locator("*").evaluateAll(nodes =>

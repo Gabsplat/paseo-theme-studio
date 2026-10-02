@@ -122,7 +122,14 @@ async function openLibrary() {
     .getByTestId("theme-studio")
     .filter({ visible: true })
     .last()
-    .getByRole("button", { name: "Components", exact: true })
+    .getByRole("tab", { name: "Components", exact: true })
+    .click();
+  // The full library opens from the Components inspector.
+  await page
+    .getByTestId("theme-studio")
+    .filter({ visible: true })
+    .last()
+    .getByRole("button", { name: "Library", exact: true })
     .click();
   await page.getByTestId("component-library").filter({ visible: true }).last().waitFor();
 }
@@ -207,7 +214,7 @@ try {
     await page.getByRole("textbox", { name: "Pack name", exact: true }).fill(packName);
     await page.getByRole("button", { name: "Save to library", exact: true }).click();
     await until("saved QA theme", async () => (await studio()).saved.some(theme => theme.name === packName));
-    await surface.getByRole("button", { name: "Presets", exact: true }).click();
+    await surface.getByRole("tab", { name: "Packs", exact: true }).click();
     await surface.getByRole("button", { name: `Favorite ${packName}`, exact: true }).click();
     saved = (await studio()).saved.find(theme => theme.name === packName);
     await until("persisted favorite", async () => (await studio()).favorites.includes(saved.id));
@@ -216,7 +223,7 @@ try {
     await surface.getByRole("button", { name: `Load ${packName}`, exact: true }).click();
     await assertPaletteUnchanged("Save, favorite, filter, and load");
     await page.reload();
-    await page.getByTestId("theme-studio").getByRole("button", { name: "Presets", exact: true }).click();
+    await page.getByTestId("theme-studio").getByRole("tab", { name: "Packs", exact: true }).click();
     await page.getByRole("button", { name: `Unfavorite ${packName}`, exact: true }).waitFor();
     checks.push("Theme saved, starred, filtered, reloaded into draft, and retained after browser reload");
     await page.screenshot({ path: join(output, "theme-studio-components-favorites.png") });
@@ -225,7 +232,7 @@ try {
     surface = page.getByTestId("theme-studio");
     await surface.waitFor();
     const current = await studio();
-    const startTitle = current.designerAgentId ? "Open designer chat" : "Start designer";
+    const startTitle = current.designerAgentId ? "Designer" : "Start designer";
     await surface.getByRole("button", { name: startTitle, exact: true }).first().click();
     await page.waitForURL(/\/workspace\//, { timeout: 60000 });
     const started = await studio();

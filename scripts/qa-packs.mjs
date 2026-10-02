@@ -34,10 +34,10 @@ try {
   await studio.waitFor();
   const original = await state();
   const before = await studio
-    .getByRole("button", { name: "Pack active", exact: true })
+    .getByRole("button", { name: "Active", exact: true })
     .first()
     .evaluate(n => getComputedStyle(n).backgroundColor);
-  await studio.getByRole("button", { name: "Colors", exact: true }).click();
+  await studio.getByRole("tab", { name: "Colors", exact: true }).click();
   const accent = studio.getByTestId("color-accent");
   await accent.fill("#F06BFF");
   await accent.press("Enter");
@@ -45,12 +45,12 @@ try {
   assert.deepEqual((await state()).active, original.active);
   assert.equal(
     await studio
-      .getByRole("button", { name: "Activate pack", exact: true })
+      .getByRole("button", { name: "Activate", exact: true })
       .first()
       .evaluate(n => getComputedStyle(n).backgroundColor),
     before,
   );
-  await studio.getByRole("button", { name: "Design", exact: true }).click();
+  await studio.getByRole("tab", { name: "Design", exact: true }).click();
   await studio.getByRole("button", { name: "Compact", exact: true }).first().click();
   await until(d => d.current.ui.density === "compact");
   await studio.getByRole("button", { name: "Mono", exact: true }).click();
@@ -73,16 +73,17 @@ try {
   await until(d => d.current.ui.panel.title === "QA notes");
   assert.deepEqual((await state()).active, original.active);
   await page.screenshot({ path: "output/theme-studio-pack-design.png" });
-  await studio.getByRole("button", { name: "Activate pack", exact: true }).first().click();
+  await studio.getByRole("button", { name: "Activate", exact: true }).first().click();
   await until(d => d.active?.ui.panel.title === "QA notes");
   await page.waitForTimeout(1500);
   assert.equal(
     await studio
-      .getByRole("button", { name: "Pack active", exact: true })
+      .getByRole("button", { name: "Active", exact: true })
       .first()
       .evaluate(n => getComputedStyle(n).backgroundColor),
     "rgb(240, 107, 255)",
   );
+  await studio.getByRole("tab", { name: "Packs", exact: true }).click();
   await studio.getByRole("button", { name: "Export", exact: true }).click();
   await page.getByRole("button", { name: "Export plugin", exact: true }).click();
   await page.getByText("Typecheck passed", { exact: true }).waitFor({ timeout: 30000 });
@@ -99,18 +100,18 @@ try {
   await page.screenshot({ path: "output/theme-studio-pack-native-panel.png" });
   await page.goto(studioUrl);
   await studio.waitFor();
-  await studio.getByRole("button", { name: "Design", exact: true }).click();
-  await studio.getByRole("button", { name: "Revert pack", exact: true }).click();
+  await studio.getByRole("tab", { name: "Packs", exact: true }).click();
+  await studio.getByRole("button", { name: "Revert", exact: true }).click();
   await until(d => JSON.stringify(d.active) === JSON.stringify(original.active));
-  await studio.getByRole("button", { name: "Disable pack", exact: true }).click();
+  await studio.getByRole("button", { name: "Disable", exact: true }).click();
   await until(d => d.active === null);
-  await studio.getByRole("button", { name: "Revert pack", exact: true }).click();
+  await studio.getByRole("button", { name: "Revert", exact: true }).click();
   await until(d => JSON.stringify(d.active) === JSON.stringify(original.active));
   await page.setViewportSize({ width: 430, height: 932 });
   await page.waitForTimeout(500);
   await page.goto(studioUrl);
   await studio.waitFor();
-  await studio.getByRole("button", { name: "Design", exact: true }).click();
+  await studio.getByRole("tab", { name: "Design", exact: true }).click();
   await page.screenshot({ path: "output/theme-studio-pack-compact.png" });
   console.log(
     JSON.stringify(

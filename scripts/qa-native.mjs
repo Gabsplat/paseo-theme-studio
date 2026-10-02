@@ -9,7 +9,7 @@ page.on("pageerror", e => console.log("PAGE ERROR", e.message));
 await page.goto("http://127.0.0.1:6767");
 await page.getByText("Theme Studio", { exact: true }).first().click();
 const studio = page.getByTestId("theme-studio");
-await studio.getByRole("button", { name: "Open designer chat", exact: true }).click();
+await studio.getByRole("button", { name: "Designer", exact: true }).click();
 await page.waitForTimeout(5000);
 await page.screenshot({ path: "output/theme-studio-native-chat.png" });
 console.log(

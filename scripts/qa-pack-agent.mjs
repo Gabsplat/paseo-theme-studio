@@ -120,7 +120,6 @@ try {
   await writeFile("output/pack-agent-timeline.txt", logs);
   assert.match(logs, /read_theme/);
   assert.match(logs, /patch_theme/);
-  await studio.getByRole("button", { name: "Preview", exact: true }).first().click();
   await page
     .getByTestId("paseo-preview")
     .getByRole("tab", { name: /preview/ })

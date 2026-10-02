@@ -34,7 +34,11 @@ Presets, named library copies, and JSON import/export retain the pack's palette 
 
 **Save pack** stores a named copy of the full draft, including its palette and UI settings. In **Packs → Your library**, star a saved pack to mark it as a favorite. **Favorites only** filters the library to those packs. Unstarring changes the favorite list without changing the draft or active pack.
 
-Loading a saved pack reuses it as a draft and preserves locked colors. Review it, make any changes, and press **Activate pack** when ready. Loading or favoriting a pack does not activate it. Removing a saved pack also removes its favorite flag.
+Loading a saved pack reuses it as a draft and preserves locked colors. Review it, make any changes, and press **Activate** when ready. Loading or favoriting a pack does not activate it. Removing a saved pack also removes its favorite flag.
+
+## First run and help
+
+The first time Theme Studio opens on a host, a short visual tour explains the workspace, the draft and activation flow, the designer and its MCP tools, components, and good prompts. Skip it or finish it once and it stays closed; the **?** button in the top bar reopens it any time. **History** next to it shows draft history in the inspector.
 
 ## Work with the designer
 
@@ -42,7 +46,9 @@ Loading a saved pack reuses it as a draft and preserves locked colors. Review it
 
 Theme Studio remembers whether you left the designer open. While it is open, choosing **Theme Studio** in the sidebar returns to the designer chat with the studio beside it. **Close designer** in that panel goes back to the full studio and keeps it there next time. The preference is stored in `preferences.json`, separately from your packs.
 
-The default designer uses Codex `gpt-6.1-sol` with high reasoning. Choose a provider and model through **Model** before creating a session; existing sessions retain their configuration. Creating a designer sends no prompt. Sending a native chat message uses the provider configured in Paseo.
+The **Designer** inspector tab shows the current session's provider, model, reasoning level, and status. A session keeps its model for its whole life. To use another one, choose a provider (Codex, Claude Code, or OpenCode) and optionally a model, then press **Start new session**: Theme Studio creates a new designer in the same workspace and opens it, and the previous chat stays there. Your choice is saved in `preferences.json` for the next session. Without a choice, the designer uses Codex `gpt-6.1-sol` with high reasoning. Creating a designer sends no prompt.
+
+The same tab lists example prompts you can copy and holds **Connect your agents**, which gives other new agents the Theme Studio tools.
 
 For example, ask: "Make a compact pack with mono text, bordered tool cards, and a Notes panel containing a short checklist and a progress bar." The designer edits the same draft as the manual controls. You review the result and activate it yourself.
 

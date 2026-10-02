@@ -108,7 +108,14 @@ async function openLibrary() {
     .getByTestId("theme-studio")
     .filter({ visible: true })
     .last()
-    .getByRole("button", { name: "Components", exact: true })
+    .getByRole("tab", { name: "Components", exact: true })
+    .click();
+  // The full library opens from the Components inspector.
+  await page
+    .getByTestId("theme-studio")
+    .filter({ visible: true })
+    .last()
+    .getByRole("button", { name: "Library", exact: true })
     .click();
   await page.getByTestId("component-library").filter({ visible: true }).last().waitFor();
 }
