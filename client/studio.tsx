@@ -36,6 +36,7 @@ import type { ComponentState } from "../shared/components";
 import { changeStudioPreferences, readStudioPreferences, type StudioPreferences } from "../shared/preferences";
 import { DesignerInspector, nextDesignerConfig } from "./designer-inspector";
 import { Onboarding } from "./onboarding";
+import { useAgentConnection } from "./agent-connection";
 
 type StudioProps = (PluginSurfaceProps | PluginWorkspacePanelProps | PluginAgentPanelProps) & {
   onOpenPreview?: (workspaceId: string, agentId: string) => void | Promise<void>;
@@ -247,7 +248,11 @@ export function ThemeStudio(props: StudioProps) {
   });
   const document = query.data;
   const preferences = useQuery({ queryKey: preferencesQueryKey, queryFn: () => readPreferences({}) });
-  const components = useComponentLibrary();
+  const connection = useAgentConnection();
+  const componentsEnabled = connection.query.data?.enabled === true;
+  const components = useComponentLibrary(componentsEnabled);
+  const visibleInspector = inspector === "components" && !componentsEnabled ? "colors" : inspector;
+  const libraryVisible = view === "library" && componentsEnabled;
   const [tourOpen, setTourOpen] = useState(false);
   // The walkthrough opens once per host, then only from the help button.
   const showTour = tourOpen || preferences.data?.onboardingDone === false;
@@ -433,7 +438,9 @@ export function ThemeStudio(props: StudioProps) {
   };
   const c = theme.colors;
 
-  const previewDefinition = latestDefinitions(components.library).find(item => item.id === selectedComponent);
+  const previewDefinition = componentsEnabled
+    ? latestDefinitions(components.library).find(item => item.id === selectedComponent)
+    : undefined;
   const previewItems: PreviewTimelineItem[] =
     previewDefinition && document
       ? [
@@ -500,17 +507,17 @@ export function ThemeStudio(props: StudioProps) {
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1, minWidth: 0, flexGrow: 1 }}>
-        {view === "library" ? (
+        {libraryVisible ? (
           <StudioButton theme={theme} title="Back to studio" icon="ArrowLeft" small onPress={() => setView("studio")} />
         ) : (
           <Icon name="Palette" size={15} color={c.foregroundMuted} />
         )}
-        {view === "library" ? (
+        {libraryVisible ? (
           <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 13 }}>
             Component library
           </Text>
         ) : null}
-        {document && view === "studio" ? (
+        {document && !libraryVisible ? (
           <>
             <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, fontWeight: "600", flexShrink: 1 }}>
               {document.current.name}
@@ -542,7 +549,7 @@ export function ThemeStudio(props: StudioProps) {
           </>
         ) : null}
       </View>
-      {view === "studio" ? (
+      {!libraryVisible ? (
         <View
           style={{
             flexDirection: "row",
@@ -720,7 +727,7 @@ export function ThemeStudio(props: StudioProps) {
 
   const inspectorBody = document ? (
     <InspectorSections.Provider value={true}>
-      {inspector === "colors" ? (
+      {visibleInspector === "colors" ? (
         <View style={{ paddingVertical: 14 }}>
           <PaletteInspector
             theme={theme}
@@ -734,7 +741,7 @@ export function ThemeStudio(props: StudioProps) {
       {inspector === "design" ? (
         <PackDesignInspector theme={theme} document={document} busy={busy} onPatch={patchUi} />
       ) : null}
-      {inspector === "components" ? (
+      {inspector === "components" && componentsEnabled ? (
         <ComponentInspector
           theme={theme}
           selectedId={selectedComponent}
@@ -942,12 +949,12 @@ export function ThemeStudio(props: StudioProps) {
       <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 }}>
         <StudioSegments
           theme={theme}
-          value={inspector}
+          value={visibleInspector}
           onChange={setInspector}
           options={[
             { value: "colors", label: "Colors" },
             { value: "design", label: "Design" },
-            { value: "components", label: "Components" },
+            ...(componentsEnabled ? [{ value: "components" as const, label: "Components" }] : []),
             { value: "packs", label: "Packs" },
             { value: "designer", label: "Designer" },
           ]}
@@ -976,7 +983,7 @@ export function ThemeStudio(props: StudioProps) {
     >
       {topBar}
       {banner}
-      {view === "library" ? (
+      {libraryVisible ? (
         <ComponentLibrarySurface {...props} />
       ) : stacked ? (
         <View style={{ flex: 1, minHeight: 0 }}>
@@ -995,6 +1002,7 @@ export function ThemeStudio(props: StudioProps) {
         <Onboarding
           theme={theme}
           pack={document.current}
+          mcpConnected={componentsEnabled}
           canOpenDesigner={Boolean(props.navigation) && !besideDesigner}
           onOpenDesigner={openDesigner}
           onFinish={() => {

@@ -7,19 +7,10 @@ import { copyText } from "@getpaseo/plugin/client/react-native";
 import { changeAgentConnection, readAgentConnection, readAgentMcpSetup } from "../shared/agent-connection";
 import { StudioButton, StudioCard, StudioLabel } from "./studio-ui";
 const key = ["theme-studio-agent-connection"];
-export function AgentConnectionCard({ theme }: { theme: PluginTheme }) {
+export function useAgentConnection() {
   const read = useRpc(readAgentConnection),
     change = useRpc(changeAgentConnection),
     cache = useQueryClient();
-  const setup = useRpc(readAgentMcpSetup);
-  const [provider, setProvider] = useState<"codex" | "claude" | "opencode">("codex");
-  const [showSetup, setShowSetup] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const setupQuery = useQuery({
-    queryKey: [...key, "setup", provider],
-    queryFn: () => setup({ provider }),
-    enabled: showSetup,
-  });
   const query = useQuery({
     queryKey: key,
     queryFn: async () => {
@@ -38,6 +29,19 @@ export function AgentConnectionCard({ theme }: { theme: PluginTheme }) {
     onError: () => {
       void query.refetch();
     },
+  });
+  return { query, mutation };
+}
+export function AgentConnectionCard({ theme }: { theme: PluginTheme }) {
+  const { query, mutation } = useAgentConnection();
+  const setup = useRpc(readAgentMcpSetup);
+  const [provider, setProvider] = useState<"codex" | "claude" | "opencode">("codex");
+  const [showSetup, setShowSetup] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const setupQuery = useQuery({
+    queryKey: [...key, "setup", provider],
+    queryFn: () => setup({ provider }),
+    enabled: showSetup,
   });
   const automaticTriggers = query.data?.automaticTriggers ?? true;
   const settingsDisabled = !query.data || mutation.isPending;
@@ -69,7 +73,15 @@ export function AgentConnectionCard({ theme }: { theme: PluginTheme }) {
         After connecting, create an agent normally in Paseo. Existing conversations keep their current configuration.
         Disconnecting stops new connections; agents already created keep their tools.
       </StudioLabel>
-      <View style={{ gap: 8, paddingTop: 13, borderTopWidth: 1, borderColor: theme.colors.border }}>
+      <View
+        style={{
+          display: query.data?.enabled ? "flex" : "none",
+          gap: 8,
+          paddingTop: 13,
+          borderTopWidth: 1,
+          borderColor: theme.colors.border,
+        }}
+      >
         <Pressable
           accessibilityRole="switch"
           accessibilityLabel="Automatic component triggers"

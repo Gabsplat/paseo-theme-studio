@@ -14,11 +14,12 @@ export const definitionKey = (definition: ComponentDefinition) => `${definition.
 const errorMessage = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason));
 
 /** The live component library, shared by the inspector and the full library view. */
-export function useComponentLibrary() {
+export function useComponentLibrary(enabled = true) {
   const read = useRpc(readComponentLibrary);
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: componentLibraryQueryKey,
+    enabled,
     queryFn: async () => {
       const library = await read({});
       const cached = queryClient.getQueryData<ComponentLibrary>(componentLibraryQueryKey);

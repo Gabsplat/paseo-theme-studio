@@ -5,8 +5,9 @@ import { Pressable, Text, View } from "react-native";
 import { colorKeys, type StudioTheme } from "../shared/theme";
 import { examplePrompts } from "./designer-inspector";
 import { StudioButton } from "./studio-ui";
+import { useAgentConnection } from "./agent-connection";
 
-type Props = { theme: PluginTheme; pack: StudioTheme };
+type Props = { theme: PluginTheme; pack: StudioTheme; mcpConnected: boolean };
 
 // Small building blocks for the diagrams. They use the host theme so the
 // onboarding sits naturally inside Paseo, and the draft pack where it is shown.
@@ -133,7 +134,7 @@ function Legend({ theme, items }: { theme: PluginTheme; items: { icon: string; n
   );
 }
 
-function Welcome({ theme, pack }: Props) {
+function Welcome({ theme, pack, mcpConnected }: Props) {
   const p = pack.colors;
   return (
     <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
@@ -149,24 +150,26 @@ function Welcome({ theme, pack }: Props) {
           <View style={{ height: 5, width: "60%", borderRadius: 3, backgroundColor: p.accent }} />
         </View>
       </Box>
-      <Box theme={theme} flex={1}>
-        <Caption theme={theme} icon="Blocks" title="Components" text="Native cards your agents show in chat." />
-        <View style={{ flexDirection: "row", gap: 4 }}>
-          {["Yes", "No"].map(label => (
-            <View
-              key={label}
-              style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: p.control }}
-            >
-              <Text style={{ color: p.foreground, fontSize: 10 }}>{label}</Text>
-            </View>
-          ))}
-        </View>
-      </Box>
+      {mcpConnected ? (
+        <Box theme={theme} flex={1}>
+          <Caption theme={theme} icon="Blocks" title="Components" text="Native cards your agents show in chat." />
+          <View style={{ flexDirection: "row", gap: 4 }}>
+            {["Yes", "No"].map(label => (
+              <View
+                key={label}
+                style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: p.control }}
+              >
+                <Text style={{ color: p.foreground, fontSize: 10 }}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        </Box>
+      ) : null}
     </View>
   );
 }
 
-function StudioMap({ theme }: Props) {
+function StudioMap({ theme, mcpConnected }: Props) {
   const c = theme.colors;
   const pill = (label: string) => (
     <View
@@ -218,7 +221,7 @@ function StudioMap({ theme }: Props) {
               <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "600" }}>Inspector</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 3, flexWrap: "wrap" }}>
-              {["Colors", "Design", "Components", "Packs", "Designer"].map(pill)}
+              {["Colors", "Design", ...(mcpConnected ? ["Components"] : []), "Packs", "Designer"].map(pill)}
             </View>
           </View>
         </View>
@@ -297,6 +300,8 @@ function DraftFlow({ theme }: Props) {
 
 function McpFlow({ theme }: Props) {
   const c = theme.colors;
+  const { query, mutation } = useAgentConnection();
+  const connected = query.data?.enabled === true;
   return (
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "stretch", gap: 4, flexWrap: "wrap" }}>
@@ -319,35 +324,47 @@ function McpFlow({ theme }: Props) {
       </View>
       <Box theme={theme} tone="surface0" dashed>
         <Text style={{ color: c.foreground, fontSize: 12, lineHeight: 18 }}>
-          <Text style={{ fontWeight: "600" }}>What is the MCP?</Text> The Model Context Protocol is how Theme Studio
-          gives agents tools. The plugin runs a small private bridge on this machine, and the designer calls tools such
-          as <Text style={{ fontFamily: "monospace" }}>read_theme</Text>,{" "}
-          <Text style={{ fontFamily: "monospace" }}>patch_pack</Text>,{" "}
-          <Text style={{ fontFamily: "monospace" }}>check_contrast</Text>, and{" "}
-          <Text style={{ fontFamily: "monospace" }}>create_composition</Text>. It can edit, save, and lock colors, but
-          it can't activate packs or generated code, unlock colors, or edit files. Those stay yours.
+          <Text style={{ fontWeight: "600" }}>MCP connects agents to Theme Studio.</Text> They can edit your draft and
+          use interactive blocks in chat. You still activate packs and generated code yourself. The dedicated designer
+          is already connected.
         </Text>
       </Box>
-      <Legend
+      <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+        <Box theme={theme} flex={1}>
+          <Caption
+            theme={theme}
+            icon="Plug"
+            title="Connect · recommended"
+            text="New agents get cards, buttons and inputs. Adds Theme Studio tools and instructions to their context."
+          />
+        </Box>
+        <Box theme={theme} flex={1}>
+          <Caption
+            theme={theme}
+            icon="Palette"
+            title="Keep it off · optional"
+            text="Keep editing themes and using the designer. Other new agents won't get block tools, and Components stays hidden."
+          />
+        </Box>
+      </View>
+      <StudioButton
         theme={theme}
-        items={[
-          {
-            icon: "MessageSquare",
-            name: "Designer",
-            text: "opens the chat with the studio beside it. Theme Studio remembers if you left it open.",
-          },
-          {
-            icon: "Settings2",
-            name: "Designer tab",
-            text: "shows the session's model and starts a new session with another provider or model.",
-          },
-          {
-            icon: "Plug",
-            name: "Other agents",
-            text: "can get the same tools: Designer tab → Connect your agents. It's off by default.",
-          },
-        ]}
+        title={connected ? "MCP connected" : mutation.isPending ? "Connecting…" : "Connect MCP"}
+        icon={connected ? "Check" : "Plug"}
+        primary={!connected}
+        small
+        disabled={connected || !query.data || mutation.isPending}
+        onPress={() => query.data && mutation.mutate({ expectedRevision: query.data.revision, enabled: true })}
       />
+      <Text style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>
+        Applies to new Codex, Claude Code and OpenCode agents. Existing chats keep their tools. You can connect or stop
+        new connections later in Designer.
+      </Text>
+      {query.error || mutation.error ? (
+        <Text accessibilityRole="alert" style={{ color: c.statusDanger, fontSize: 12 }}>
+          {(mutation.error ?? query.error)?.message}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -392,7 +409,7 @@ function ComponentFlow({ theme }: Props) {
   );
 }
 
-function Tips({ theme }: Props) {
+function Tips({ theme, mcpConnected }: Props) {
   const c = theme.colors;
   const [copied, setCopied] = useState<number | null>(null);
   return (
@@ -414,7 +431,7 @@ function Tips({ theme }: Props) {
         <Text style={{ color: c.foreground, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>
           Try asking · tap to copy
         </Text>
-        {examplePrompts.map((prompt, index) => (
+        {(mcpConnected ? examplePrompts : examplePrompts.slice(0, -1)).map((prompt, index) => (
           <Pressable
             key={prompt}
             accessibilityRole="button"
@@ -461,8 +478,8 @@ const steps: { title: string; body: string; Visual: (props: Props) => ReactNode 
     Visual: DraftFlow,
   },
   {
-    title: "The designer and its tools",
-    body: "Chat with a designer agent instead of editing by hand. It works through Theme Studio's MCP tools, and you stay in control.",
+    title: "Connect your agents",
+    body: "Enable blocks in your agents' chats with the optional MCP connection. You can also continue with it off.",
     Visual: McpFlow,
   },
   {
@@ -481,13 +498,16 @@ const steps: { title: string; body: string; Visual: (props: Props) => ReactNode 
 export function Onboarding({
   theme,
   pack,
+  mcpConnected,
   canOpenDesigner,
   onFinish,
   onOpenDesigner,
 }: Props & { canOpenDesigner: boolean; onFinish: () => void; onOpenDesigner: () => void }) {
   const [index, setIndex] = useState(0);
-  const step = steps[index];
-  const last = index === steps.length - 1;
+  const tourSteps = mcpConnected ? steps : steps.filter(step => step.Visual !== ComponentFlow);
+  const currentIndex = Math.min(index, tourSteps.length - 1);
+  const step = tourSteps[currentIndex];
+  const last = currentIndex === tourSteps.length - 1;
   const c = theme.colors;
   return (
     <View
@@ -520,7 +540,7 @@ export function Onboarding({
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, paddingTop: 14 }}>
           <Icon name="Palette" size={15} color={c.accent} />
           <Text style={{ color: c.foregroundMuted, fontSize: 12, flex: 1 }}>
-            Theme Studio · {index + 1} of {steps.length}
+            Theme Studio · {currentIndex + 1} of {tourSteps.length}
           </Text>
           <StudioButton theme={theme} title="Skip tour" small onPress={onFinish} />
         </View>
@@ -531,7 +551,7 @@ export function Onboarding({
             </Text>
             <Text style={{ color: c.foregroundMuted, fontSize: 13, lineHeight: 20 }}>{step.body}</Text>
           </View>
-          <step.Visual theme={theme} pack={pack} />
+          <step.Visual theme={theme} pack={pack} mcpConnected={mcpConnected} />
         </ScrollView>
         <View
           style={{
@@ -546,23 +566,29 @@ export function Onboarding({
           }}
         >
           <View style={{ flexDirection: "row", gap: 5, flex: 1 }}>
-            {steps.map((item, dot) => (
+            {tourSteps.map((item, dot) => (
               <Pressable
                 key={item.title}
                 accessibilityRole="button"
                 accessibilityLabel={`Go to step ${dot + 1}: ${item.title}`}
                 onPress={() => setIndex(dot)}
                 style={{
-                  width: dot === index ? 18 : 7,
+                  width: dot === currentIndex ? 18 : 7,
                   height: 7,
                   borderRadius: 4,
-                  backgroundColor: dot === index ? c.accent : c.surface2,
+                  backgroundColor: dot === currentIndex ? c.accent : c.surface2,
                 }}
               />
             ))}
           </View>
-          {index > 0 ? (
-            <StudioButton theme={theme} title="Back" icon="ArrowLeft" small onPress={() => setIndex(index - 1)} />
+          {currentIndex > 0 ? (
+            <StudioButton
+              theme={theme}
+              title="Back"
+              icon="ArrowLeft"
+              small
+              onPress={() => setIndex(currentIndex - 1)}
+            />
           ) : null}
           {last && canOpenDesigner ? (
             <StudioButton
@@ -582,7 +608,7 @@ export function Onboarding({
             icon={last ? "Check" : "ArrowRight"}
             primary
             small
-            onPress={() => (last ? onFinish() : setIndex(index + 1))}
+            onPress={() => (last ? onFinish() : setIndex(currentIndex + 1))}
           />
         </View>
       </View>

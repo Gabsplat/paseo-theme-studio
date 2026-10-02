@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { defaultDesignerModel, defaultDesignerProvider } from "../shared/designer";
 import type { StudioPreferences } from "../shared/preferences";
-import { AgentConnectionCard } from "./agent-connection";
+import { AgentConnectionCard, useAgentConnection } from "./agent-connection";
 import { StudioButton, StudioCard, StudioLabel } from "./studio-ui";
 
 const providers = [
@@ -143,6 +143,7 @@ export function DesignerInspector({
   onNewSession: () => void;
 }) {
   const next = nextDesignerConfig(preferences);
+  const connection = useAgentConnection();
   const models = useQuery({
     queryKey: ["theme-studio-designer-models", next.provider],
     enabled: Boolean(paseo),
@@ -236,7 +237,7 @@ export function DesignerInspector({
         description="Tap a prompt to copy it, then paste it in the designer chat."
       >
         <View style={{ gap: 4 }}>
-          {examplePrompts.map((prompt, index) => (
+          {(connection.query.data?.enabled ? examplePrompts : examplePrompts.slice(0, -1)).map((prompt, index) => (
             <Pressable
               key={prompt}
               accessibilityRole="button"
