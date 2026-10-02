@@ -154,8 +154,10 @@ export function DesignerInspector({
     },
     staleTime: 60_000,
   });
+  // An empty choice falls back to Theme Studio's default for the provider, which may be a specific model.
+  const fallbackModel = defaultDesignerModel(next.provider);
   const modelOptions = [
-    { value: "", label: "Provider default" },
+    { value: "", label: fallbackModel === "default" ? "Provider default" : `Default (${fallbackModel})` },
     ...(models.data ?? []).map(model => ({
       value: model.id,
       label: model.label,
