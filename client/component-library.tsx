@@ -4,7 +4,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { copyText, Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Component, type ReactNode, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import {
   activateComponentBuild,
   buildComponents,
@@ -32,7 +32,7 @@ import { StudioButton, StudioCard, StudioLabel } from "./studio-ui";
 import { AgentConnectionCard } from "./agent-connection";
 import { ComponentTriggersEditor, ComponentTriggersSummary, parseTriggersJson } from "./component-triggers";
 
-export type ComponentLibraryProps = Pick<PluginSurfaceProps, "theme" | "layout" | "host" | "navigation"> & {
+type ComponentLibraryProps = Pick<PluginSurfaceProps, "theme" | "layout" | "host" | "navigation"> & {
   workspaceId?: string;
   agentId?: string;
 };

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { PluginTheme } from "@getpaseo/plugin";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
     z.string(),
     z.number().finite(),
@@ -115,7 +115,7 @@ export function parseComponentTree(value: unknown): ComponentNode {
 }
 
 export const componentIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/, "Component IDs must be lowercase slugs.");
-export const componentTriggerEventSchema = z.enum(["agent_context", "turn_started", "turn_completed", "tool_failed"]);
+const componentTriggerEventSchema = z.enum(["agent_context", "turn_started", "turn_completed", "tool_failed"]);
 export const componentTriggerSchema = z
   .object({
     id: componentIdSchema,
@@ -163,7 +163,6 @@ export const componentInstanceTriggerSchema = z
     occurrenceKey: z.string().trim().min(1).max(200).default("default"),
   })
   .strict();
-export type ComponentInstanceTrigger = z.infer<typeof componentInstanceTriggerSchema>;
 export const componentInstanceSchema = z
   .object({
     id: z.string(),
@@ -205,4 +204,3 @@ export const componentTimelineSchema = z
   .object({ instanceId: z.string(), componentId: componentIdSchema, componentVersion: z.number().int().positive() })
   .strict();
 export type ComponentTimelineData = z.infer<typeof componentTimelineSchema>;
-export const componentKind = (id: string) => `studio-component-${componentIdSchema.parse(id)}`;

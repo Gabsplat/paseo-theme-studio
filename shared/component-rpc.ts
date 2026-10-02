@@ -33,7 +33,7 @@ export const componentPublishSchema = z
     state: componentStateSchema.optional(),
   })
   .strict();
-export const componentInteractSchema = z
+const componentInteractSchema = z
   .object({ expectedRevision: z.number().int().nonnegative(), instanceId: z.string(), action: componentActionSchema })
   .strict();
 export const componentUpdateSchema = z

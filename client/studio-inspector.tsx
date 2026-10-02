@@ -185,7 +185,7 @@ function ColorField({
   );
 }
 
-export function ContrastSummary({ theme, document }: { theme: PluginTheme; document: StudioDocument }) {
+function ContrastSummary({ theme, document }: { theme: PluginTheme; document: StudioDocument }) {
   const { colors } = document.current;
   const workspaceKey = document.current.appearance === "dark" ? "raised" : "background";
   const report = contrastReport(colors, document.current.appearance);

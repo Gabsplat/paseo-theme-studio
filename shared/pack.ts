@@ -10,7 +10,7 @@ export const panelIcons = [
   "Terminal",
   "Palette",
 ] as const;
-export const panelBlockSchema = z.discriminatedUnion("type", [
+const panelBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string().max(600) }).strict(),
   z.object({ type: z.literal("stat"), label: z.string().max(60), value: z.string().max(80) }).strict(),
   z
@@ -38,7 +38,6 @@ export const packUiSchema = z
   })
   .strict();
 export type PackUi = z.infer<typeof packUiSchema>;
-export type PanelBlock = z.infer<typeof panelBlockSchema>;
 export const defaultPackUi: PackUi = {
   density: "comfortable",
   radius: 10,
@@ -49,4 +48,3 @@ export const defaultPackUi: PackUi = {
   activityPanel: false,
   panel: { enabled: false, title: "Design panel", icon: "Sparkles", blocks: [] },
 };
-export const uiSchema = packUiSchema;

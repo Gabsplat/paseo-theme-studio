@@ -10,7 +10,6 @@ import {
 import type { PluginTheme } from "@getpaseo/plugin";
 import { forestTheme, type StudioTheme, type PackUi } from "../shared/theme";
 import { packToolCardSchema, transformPackTool, type PackToolData } from "./pack-transform";
-export { packToolCardSchema, transformPackTool, type PackToolData } from "./pack-transform";
 
 export function packMetrics(ui: PackUi) {
   return {

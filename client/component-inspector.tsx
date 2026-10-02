@@ -53,7 +53,7 @@ export function latestDefinitions(library: ComponentLibrary | undefined, search 
     );
 }
 
-export function isReady(library: ComponentLibrary | undefined, definition: ComponentDefinition) {
+function isReady(library: ComponentLibrary | undefined, definition: ComponentDefinition) {
   return definition.mode === "composition" || Boolean(library?.activeKeys.includes(definitionKey(definition)));
 }
 

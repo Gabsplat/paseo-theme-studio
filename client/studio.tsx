@@ -31,7 +31,7 @@ import { ComponentCard } from "./component-runtime";
 import type { ComponentState } from "../shared/components";
 import { changeStudioPreferences, readStudioPreferences } from "../shared/preferences";
 
-export type StudioProps = (PluginSurfaceProps | PluginWorkspacePanelProps | PluginAgentPanelProps) & {
+type StudioProps = (PluginSurfaceProps | PluginWorkspacePanelProps | PluginAgentPanelProps) & {
   onOpenPreview?: (workspaceId: string, agentId: string) => void | Promise<void>;
   onOpenPack?: (workspaceId: string, agentId?: string) => void | Promise<void>;
   /** Opens the full Theme Studio surface, leaving the designer chat. */
@@ -49,7 +49,7 @@ type StudioView = {
   component: string | null;
   filterFavorites: boolean;
 };
-export const studioQueryKey = ["theme-studio-document"] as const;
+const studioQueryKey = ["theme-studio-document"] as const;
 const preferencesQueryKey = ["theme-studio-preferences"] as const;
 // Remembers each host and workspace's view while Paseo keeps this plugin loaded.
 const studioViews = new Map<string, StudioView>();

@@ -21,8 +21,8 @@ import {
 } from "./capabilities";
 
 /** `caller` is the Paseo agent ID that the MCP bridge process is bound to, when known. */
-export type ComponentCall = (name: string, input: unknown, caller: string | undefined) => Promise<unknown>;
-export const callerHeader = "x-theme-studio-caller";
+type ComponentCall = (name: string, input: unknown, caller: string | undefined) => Promise<unknown>;
+const callerHeader = "x-theme-studio-caller";
 const agentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 class RequestTooLarge extends Error {

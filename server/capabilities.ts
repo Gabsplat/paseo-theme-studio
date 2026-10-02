@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { colorKeys, hexSchema, paletteSchema, presets, uiSchema } from "../shared/theme";
+import { colorKeys, hexSchema, paletteSchema, presets, packUiSchema } from "../shared/theme";
 import {
   componentCreateSchema,
   componentCodeSchema,
@@ -11,7 +11,7 @@ import { componentIdSchema, componentNodeSchema } from "../shared/components";
 import { componentTriggerInstructions } from "../shared/component-trigger-policy";
 
 export const revisionSchema = z.object({ expectedRevision: z.number().int().nonnegative() }).strict();
-export const componentToolNames = [
+const componentToolNames = [
   "list_components",
   "list_component_triggers",
   "trigger_component",
@@ -27,7 +27,7 @@ export const patchSchema = z
   .object({
     expectedRevision: z.number().int().nonnegative(),
     colors: paletteSchema.partial().default({}),
-    ui: uiSchema.partial().optional(),
+    ui: packUiSchema.partial().optional(),
     name: z.string().min(1).max(60).optional(),
     appearance: z.enum(["dark", "light"]).optional(),
     label: z.string().max(200).optional(),
@@ -40,9 +40,7 @@ export const patchSchema = z
 export const variantSchema = patchSchema
   .extend({ name: z.string().min(1).max(60) })
   .omit({ label: true, component: true });
-export const contrastInputSchema = z
-  .object({ foreground: hexSchema.optional(), background: hexSchema.optional() })
-  .strict();
+const contrastInputSchema = z.object({ foreground: hexSchema.optional(), background: hexSchema.optional() }).strict();
 export const contrastSchema = contrastInputSchema.refine(
   value => Boolean(value.foreground) === Boolean(value.background),
   "Supply foreground and background together.",
@@ -202,7 +200,7 @@ export function capabilities() {
       revision:
         "Pack mutations require STUDIO expectedRevision from read_theme; definition/manual publication mutations require LIBRARY revision from list_components; state updates require INSTANCE revision from read_component_instance. trigger_component uses the verified active turn and deduplication key instead of a caller revision. On conflict, reread and preserve the latest manual edits.",
     },
-    uiSchema: z.toJSONSchema(uiSchema),
+    uiSchema: z.toJSONSchema(packUiSchema),
     componentTreeSchema: z.toJSONSchema(componentNodeSchema),
     tools: toolDefinitions,
     presets: presets.map(({ id, name, appearance }) => ({ id, name, appearance })),

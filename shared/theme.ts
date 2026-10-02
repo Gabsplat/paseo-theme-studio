@@ -1,14 +1,6 @@
 import { z } from "zod";
 import { packUiSchema, defaultPackUi } from "./pack";
-export {
-  packUiSchema,
-  uiSchema,
-  defaultPackUi,
-  panelIcons,
-  panelBlockSchema,
-  type PackUi,
-  type PanelBlock,
-} from "./pack";
+export { packUiSchema, panelIcons, type PackUi } from "./pack";
 
 export const colorKeys = [
   "background",
@@ -138,7 +130,7 @@ export const presets: StudioTheme[] = [
     },
   },
 ];
-export const historyEntrySchema = z.object({
+const historyEntrySchema = z.object({
   theme: themeSchema,
   label: z.string(),
   source: z.enum(["manual", "agent", "preset", "system"]),

@@ -642,4 +642,3 @@ export class ComponentService {
     await this.queue;
   }
 }
-export { ComponentService as ComponentLibraryStore };

@@ -18,7 +18,7 @@ export class RevisionConflict extends Error {
   }
 }
 
-export function validateDocument(value: unknown): StudioDocument {
+function validateDocument(value: unknown): StudioDocument {
   const document = documentSchema.parse(value);
   if (!document.history.length || document.cursor >= document.history.length)
     throw new Error("Theme history has an invalid cursor.");
@@ -32,7 +32,7 @@ export function validateDocument(value: unknown): StudioDocument {
   return document;
 }
 
-export function migrateDocument(value: unknown): StudioDocument {
+function migrateDocument(value: unknown): StudioDocument {
   if (!value || typeof value !== "object" || Array.isArray(value)) return validateDocument(value);
   const raw = value as Record<string, unknown>;
   return validateDocument({
@@ -61,7 +61,7 @@ function appendHistory(
   document.cursor = document.history.length - 1;
 }
 
-export function applyAction(
+function applyAction(
   document: StudioDocument,
   action: StudioAction,
   source: "manual" | "agent" = "manual",

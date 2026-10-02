@@ -17,7 +17,7 @@ import type { StudioStore } from "./store";
 import { componentEventPrompt } from "../shared/component-event";
 import { ComponentRevisionConflict } from "./components";
 
-export interface ComponentControllerService {
+interface ComponentControllerService {
   read(): Promise<ComponentLibrary>;
   createInstance(input: {
     expectedRevision: number;
@@ -48,14 +48,14 @@ export interface ComponentControllerService {
   removeInstance(instanceId: string): Promise<void>;
 }
 
-export type PublishComponentInput = {
+type PublishComponentInput = {
   expectedRevision: number;
   componentId: string;
   version?: number;
   agentId?: string;
   state?: ComponentState;
 };
-export type TriggerComponentInput = {
+type TriggerComponentInput = {
   componentId: string;
   version?: number;
   triggerId: string;
@@ -63,14 +63,14 @@ export type TriggerComponentInput = {
   state?: ComponentState;
   occurrenceKey?: string;
 };
-export type InteractComponentInput = { instanceId: string; expectedRevision: number; action: ComponentAction };
-export type ComponentInteractionResult = {
+type InteractComponentInput = { instanceId: string; expectedRevision: number; action: ComponentAction };
+type ComponentInteractionResult = {
   instance: ComponentInstance;
   event: ComponentEvent;
   delivery: "state-only" | "queued" | "dispatched" | "unavailable";
   error?: string;
 };
-export type ComponentDrainResult = {
+type ComponentDrainResult = {
   dispatched: string[];
   queued: string[];
   errors: { agentId: string; message: string }[];
