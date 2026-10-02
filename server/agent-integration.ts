@@ -1,5 +1,5 @@
 import type { PluginBeforeRequests } from "@getpaseo/plugin/server";
-import { toolDefinitions } from "./capabilities";
+import { codeGenerationTools, toolDefinitions } from "./capabilities";
 import type { ThemeBridge } from "./bridge";
 import { ownerTokenEnvironment } from "./agent-owners";
 import { componentTriggerInstructions } from "../shared/component-trigger-policy";
@@ -28,6 +28,8 @@ export function connectAgent(
     return request;
   const preapproved = [...(request.config.toolPolicy?.preapproved ?? [])];
   for (const tool of toolDefinitions) {
+    // Writing and compiling generated code stays behind the user's normal permission prompt.
+    if (codeGenerationTools.includes(tool.name)) continue;
     if (!preapproved.some(ref => ref.server === "theme-studio" && ref.tool === tool.name))
       preapproved.push({ kind: "mcp", server: "theme-studio", tool: tool.name });
   }

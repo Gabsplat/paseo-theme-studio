@@ -509,3 +509,23 @@ test("real stdio MCP tools share state and reconnect after bridge restart", asyn
   const illegal = await rpc("tools/call", { name: "activate", arguments: { expectedRevision: savedPack.revision } });
   assert.equal(illegal.result.isError, true);
 });
+
+test("the patch_theme compatibility route cannot bypass approval for code generation", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "theme-bridge-code-test-"));
+  const store = new StudioStore(directory);
+  t.after(async () => {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const designer = "99999999-8888-4777-8666-555555555555";
+  const general = "11111111-2222-4333-8444-555555555555";
+  const bridge = new ThemeBridge(store, async name => ({ forwarded: name }));
+  let document = await store.read();
+  document = await store.mutate(document.revision, next => ({ ...next, designerAgentId: designer }));
+  for (const tool of ["create_code_component", "build_components"]) {
+    const input = { expectedRevision: document.revision, component: { tool, arguments: {} } };
+    await assert.rejects(bridge.call("patch_theme", input, general), /directly so the user can approve/);
+    await assert.rejects(bridge.call("patch_theme", input), /directly so the user can approve/);
+    assert.deepEqual(await bridge.call("patch_theme", input, designer), { forwarded: tool });
+  }
+});

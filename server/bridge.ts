@@ -8,6 +8,7 @@ import { contrastReport } from "./contrast";
 import { StudioStore } from "./store";
 import {
   capabilities,
+  codeGenerationTools,
   contrastSchema,
   lockSchema,
   patchSchema,
@@ -137,6 +138,13 @@ export class ThemeBridge {
           if ((await this.store.read()).revision !== expectedRevision)
             throw new Error("Studio changed elsewhere. Read read_theme and retry.");
           if (!this.componentCall) throw new Error("Component service is unavailable.");
+          // The compatibility route inherits patch_theme's approval, so it must not bypass
+          // the permission prompt that general agents get for code generation.
+          if (codeGenerationTools.includes(component.tool)) {
+            const designerAgentId = (await this.store.read()).designerAgentId;
+            if (!caller || caller !== designerAgentId)
+              throw new Error(`Call ${component.tool} directly so the user can approve generated code.`);
+          }
           return this.componentCall(component.tool, component.arguments, caller);
         }
         return this.store.change(expectedRevision, { type: "patch", ...patch }, "agent");

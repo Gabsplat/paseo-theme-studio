@@ -27,6 +27,11 @@ test("native creation gains component MCP without replacing task, provider, envi
   });
   assert.ok(next.config.toolPolicy!.preapproved.some(tool => tool.server === "other"));
   assert.ok(next.config.toolPolicy!.preapproved.some(tool => tool.tool === "update_component_state"));
+  for (const tool of ["create_code_component", "build_components"])
+    assert.ok(
+      !next.config.toolPolicy!.preapproved.some(ref => ref.server === "theme-studio" && ref.tool === tool),
+      `${tool} must keep the user's permission prompt for general agents.`,
+    );
   assert.deepEqual(connectAgent(next, bridge, "/node"), next);
   assert.deepEqual(request.config.mcpServers, { other: { type: "stdio", command: "other" } });
 });

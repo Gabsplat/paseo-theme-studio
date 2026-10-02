@@ -56,7 +56,7 @@ This public CLI operation restarts the underlying provider session without submi
 
 MCP initialization advertises the current designer instructions, including interactive native chat components. Designers must call `read_theme` before answering capability questions so earlier conversation descriptions do not override the current supported scope.
 
-Existing designers can also use component operations through `patch_theme` with a `component: { tool, arguments }` payload. This preserves their previously approved MCP route. The outer revision refers to the studio document; nested arguments use the component library or instance revision. Component activation remains a manual UI action.
+Existing designers can also use component operations through `patch_theme` with a `component: { tool, arguments }` payload. This preserves their previously approved MCP route. The outer revision refers to the studio document; nested arguments use the component library or instance revision. Component activation remains a manual UI action. General agents connected through the installer opt-in do not have `create_code_component` or `build_components` preapproved, and the `patch_theme` route refuses them for anyone except the designer, so generated code always passes through Paseo's normal permission prompt.
 
 ## Component library
 

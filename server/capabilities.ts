@@ -245,3 +245,6 @@ export function capabilities() {
     ],
   };
 }
+
+/** Tools that write generated source and run the compiler. Only the designer has them preapproved. */
+export const codeGenerationTools: readonly string[] = ["create_code_component", "build_components"];
