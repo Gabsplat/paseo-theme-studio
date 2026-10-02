@@ -250,6 +250,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
   const [copiedSource, setCopiedSource] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
 
   const query = useQuery({
     queryKey: componentLibraryQueryKey,
@@ -307,6 +308,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
     onError: report,
     onSuccess: result => {
       acceptLibrary(result.library);
+      setReviewing(false);
       setNotice("Components activated. Theme Studio is reloading to make their renderers available.");
     },
   });
@@ -339,6 +341,8 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
     latestBuild.keys.some(key => !library?.activeKeys.includes(key)) &&
     pendingCode.every(definition => latestBuild.keys.includes(definitionKey(definition))),
   );
+  const reviewKeys = latestBuild?.keys.filter(key => !library?.activeKeys.includes(key)) ?? [];
+  const reviewDefinitions = codeDefinitions.filter(definition => reviewKeys.includes(definitionKey(definition)));
   const latest = new Map<string, ComponentDefinition>();
   for (const definition of library?.definitions ?? [])
     if ((latest.get(definition.id)?.version ?? 0) < definition.version) latest.set(definition.id, definition);
@@ -612,13 +616,74 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
                     icon="Check"
                     primary
                     small
-                    disabled={busy || !canActivate}
-                    onPress={() => {
-                      if (latestBuild)
-                        activating.mutate({ expectedRevision: library.revision, buildId: latestBuild.id });
-                    }}
+                    disabled={busy || !canActivate || reviewing}
+                    onPress={() => setReviewing(true)}
                   />
                 </View>
+                {reviewing && latestBuild ? (
+                  <View style={{ gap: 8 }}>
+                    <StudioLabel theme={theme}>
+                      Review the source before activating. Typecheck and import checks are not a sandbox: activated code
+                      runs inside Paseo with the plugin's permissions.
+                    </StudioLabel>
+                    {reviewDefinitions.map(definition =>
+                      definition.mode === "code" ? (
+                        <View key={definitionKey(definition)} style={{ gap: 4 }}>
+                          <StudioLabel theme={theme}>
+                            {definition.name} · {definitionKey(definition)}
+                          </StudioLabel>
+                          <ScrollView
+                            style={{
+                              maxHeight: 260,
+                              borderWidth: 1,
+                              borderColor: theme.colors.border,
+                              borderRadius: 8,
+                              backgroundColor: theme.colors.surface2,
+                            }}
+                            contentContainerStyle={{ padding: 10 }}
+                          >
+                            <Text
+                              selectable
+                              style={{
+                                color: theme.colors.foreground,
+                                fontSize: 11,
+                                lineHeight: 16,
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              {definition.code}
+                            </Text>
+                          </ScrollView>
+                        </View>
+                      ) : null,
+                    )}
+                    <View style={{ flexDirection: "row", gap: 7, flexWrap: "wrap" }}>
+                      <StudioButton
+                        theme={theme}
+                        title={activating.isPending ? "Activating…" : "I reviewed this code · Activate"}
+                        icon="Check"
+                        primary
+                        small
+                        disabled={busy}
+                        onPress={() =>
+                          activating.mutate({
+                            expectedRevision: library.revision,
+                            buildId: latestBuild.id,
+                            reviewedKeys: reviewKeys,
+                          })
+                        }
+                      />
+                      <StudioButton
+                        theme={theme}
+                        title="Cancel"
+                        icon="X"
+                        small
+                        disabled={activating.isPending}
+                        onPress={() => setReviewing(false)}
+                      />
+                    </View>
+                  </View>
+                ) : null}
                 {latestBuild ? (
                   <>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

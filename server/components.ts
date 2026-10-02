@@ -104,6 +104,23 @@ const allowedImports = new Set([
   "@getpaseo/plugin/client/react-native",
   "@getpaseo/plugin/client/ui",
 ]);
+// Native escape hatches: device APIs, URL handlers, and runtime settings.
+const restrictedNativeImports = new Set([
+  "NativeModules",
+  "TurboModuleRegistry",
+  "NativeEventEmitter",
+  "DeviceEventEmitter",
+  "Linking",
+  "DevSettings",
+  "requireNativeComponent",
+  "PermissionsAndroid",
+  "Share",
+  "Clipboard",
+]);
+/**
+ * Rejects obvious capability use in generated source. This is a best-effort filter,
+ * not a sandbox: activation requires the user to review the full source.
+ */
 export function validateComponentCode(code: string, projectDirectory: string = exportAssets.projectDirectory): void {
   if (!code.trim() || code.length > 40000) throw new Error("Component source must contain 1–40,000 characters.");
   const ts = createRequire(join(projectDirectory, "package.json"))(
@@ -129,6 +146,24 @@ export function validateComponentCode(code: string, projectDirectory: string = e
           );
       }
     }
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      const bindings = node.importClause?.namedBindings;
+      if (node.moduleSpecifier.text === "react-native" && bindings) {
+        if (ts.isNamespaceImport(bindings))
+          throw new Error("Import React Native members by name so their capabilities can be checked.");
+        for (const element of bindings.elements) {
+          const imported = (element.propertyName ?? element.name).text;
+          if (restrictedNativeImports.has(imported))
+            throw new Error(`Unsupported component capability ${imported}. Components use native UI only.`);
+        }
+      }
+    }
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      ["constructor", "__proto__", "prototype"].includes(node.argumentExpression.text)
+    )
+      throw new Error(`Unsupported component capability ${node.argumentExpression.text}.`);
     if (ts.isImportEqualsDeclaration(node)) throw new Error("Component import assignments are not supported.");
     if (ts.isExportAssignment(node) && !node.isExportEquals) hasDefault = true;
     if (
@@ -154,6 +189,11 @@ export function validateComponentCode(code: string, projectDirectory: string = e
         "WebSocket",
         "fetch",
         "dangerouslySetInnerHTML",
+        "Reflect",
+        "self",
+        "constructor",
+        "__proto__",
+        "Proxy",
       ].includes(node.text)
     )
       throw new Error(
@@ -516,7 +556,7 @@ export class ComponentService {
       validation: { typecheck: true as const },
     };
   }
-  async activateBuild(input: { expectedRevision: number; buildId: string }) {
+  async activateBuild(input: { expectedRevision: number; buildId: string; reviewedKeys: readonly string[] }) {
     const { library } = await this.mutate(input.expectedRevision, async library => {
       const build = library.builds.find(item => item.id === input.buildId);
       if (!build) throw new Error("Validated component build was not found.");
@@ -524,6 +564,9 @@ export class ComponentService {
         throw new Error(
           "This build omits a previously active component version. Build the full library again to preserve existing chat components.",
         );
+      // The typecheck and import filter are not a sandbox; the user must see new source before it runs.
+      if (build.keys.some(key => !library.activeKeys.includes(key) && !input.reviewedKeys.includes(key)))
+        throw new Error("Review the source of each new component version before activating it.");
       const definitions = library.definitions.filter(item => build.keys.includes(`${item.id}@${item.version}`));
       const expected = generatedFiles(definitions);
       expected["shared/components.ts"] = await readFile(join(this.projectDirectory, "shared/components.ts"), "utf8");

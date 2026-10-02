@@ -69,7 +69,7 @@ There are two creation paths:
 
 Generated source and immutable definitions persist in the component library. Activation writes the versioned sources under `client/generated/` and their static imports in `client/generated-components.tsx`. Historical versions remain registered so earlier published rows can keep rendering their original components. Generated code is compiled, not evaluated from a runtime string.
 
-Generated components are trusted code running inside the plugin. Native import checks and typechecking are compatibility checks, not a security sandbox. Review source in **Preview & source → Source** before activating a build.
+Generated components are trusted code running inside the plugin. Native import checks and typechecking are compatibility checks, not a security sandbox. **Activate components** first shows the full source of every version that the build would newly activate; activation proceeds only after you confirm **I reviewed this code · Activate**, and the server refuses builds whose new versions were not reviewed. The checks also reject `react-native` escape hatches such as `NativeModules` and `Linking`, namespace imports, and `constructor`/`Reflect` access, but they remain a filter, not a sandbox.
 
 The generated-code contract is a default React Native component receiving `{ theme, state, onAction }`. Import its type from `../../shared/components`; the build stores the source in `client/generated/`. Use host colors and native controls:
 

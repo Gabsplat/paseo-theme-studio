@@ -282,13 +282,12 @@ try {
 
   await openLibrary();
   const code = (await library()).definitions.find(definition => definition.id === codeId);
-  if (!(await library()).activeKeys.includes(`${codeId}@${code.version}`))
-    await page
-      .getByTestId("component-library")
-      .filter({ visible: true })
-      .last()
-      .getByRole("button", { name: "Activate components", exact: true })
-      .click();
+  if (!(await library()).activeKeys.includes(`${codeId}@${code.version}`)) {
+    const surface = page.getByTestId("component-library").filter({ visible: true }).last();
+    await surface.getByRole("button", { name: "Activate components", exact: true }).click();
+    // Activation now requires confirming the source review.
+    await surface.getByRole("button", { name: "I reviewed this code · Activate", exact: true }).click();
+  }
   await until("manual component activation", async () =>
     (await library()).activeKeys.includes(`${codeId}@${code.version}`),
   );

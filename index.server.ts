@@ -179,7 +179,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(components.activateComponentBuild, async (input, context) => {
     bind(context);
     const result = await componentService.activateBuild(input);
-    // Reply before reloading this worker. The source was reviewed and typechecked.
+    // Reply before reloading this worker. The user confirmed the source review; the build passed typecheck.
     setTimeout(() => {
       const child = spawn("paseo", ["plugin", "reload", "theme-studio", "--home", dirname(directory)], {
         detached: true,

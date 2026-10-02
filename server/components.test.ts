@@ -463,6 +463,12 @@ test("code import validation rejects non-native and dynamic execution but accept
     'export default function Card(){return eval("null")}',
     'export default function Card(){return import("react")}',
     'export default function Card(){return window.localStorage.getItem("x")}',
+    'export default function Card(){return [].map.constructor("return 1")()}',
+    'export default function Card(){const f=[].map["constructor"];return null}',
+    'export default function Card(){return Reflect.get(self,"x")}',
+    'import { Linking } from "react-native"; export default function Card(){return null}',
+    'import { NativeModules as N } from "react-native"; export default function Card(){return null}',
+    'import * as RN from "react-native"; export default function Card(){return null}',
   ])
     assert.throws(() => validateComponentCode(invalid), /Unsupported|native|Dynamic/i);
 });
@@ -494,7 +500,15 @@ test("code builds typecheck all immutable versions before manual activation and 
     "export const generatedComponents = {};\n",
   );
   await assert.rejects(stat(join(built.build.directory, "node_modules")), { code: "ENOENT" });
-  const activated = await service.activateBuild({ expectedRevision: built.library.revision, buildId: built.build.id });
+  await assert.rejects(
+    service.activateBuild({ expectedRevision: built.library.revision, buildId: built.build.id, reviewedKeys: [] }),
+    /Review the source/,
+  );
+  const activated = await service.activateBuild({
+    expectedRevision: built.library.revision,
+    buildId: built.build.id,
+    reviewedKeys: built.build.keys,
+  });
   assert.equal(activated.reloadRequired, true);
   assert.deepEqual(activated.library.activeKeys, ["decision-card@1"]);
   const created = await service.createInstance({
@@ -515,13 +529,21 @@ test("code builds typecheck all immutable versions before manual activation and 
   assert.deepEqual(second.definition.triggers, first.definition.triggers);
   const rebuilt = await service.build({ expectedRevision: second.library.revision });
   assert.deepEqual(rebuilt.build.keys, ["decision-card@1", "decision-card@2"]);
-  const latest = await service.activateBuild({ expectedRevision: rebuilt.library.revision, buildId: rebuilt.build.id });
+  const latest = await service.activateBuild({
+    expectedRevision: rebuilt.library.revision,
+    buildId: rebuilt.build.id,
+    reviewedKeys: rebuilt.build.keys,
+  });
   const registry = await readFile(join(project, "client/generated-components.tsx"), "utf8");
   assert.match(registry, /decision-card@1/);
   assert.match(registry, /decision-card@2/);
   assert.equal((await service.readInstance(created.instance.id)).componentVersion, 1);
   await assert.rejects(
-    service.activateBuild({ expectedRevision: latest.library.revision, buildId: built.build.id }),
+    service.activateBuild({
+      expectedRevision: latest.library.revision,
+      buildId: built.build.id,
+      reviewedKeys: built.build.keys,
+    }),
     /previously active component version/,
   );
   assert.equal(await readFile(join(project, "client/generated-components.tsx"), "utf8"), registry);
@@ -542,7 +564,11 @@ test("failed or modified code candidates cannot alter activated source or active
     source + "// modified after check\n",
   );
   await assert.rejects(
-    service.activateBuild({ expectedRevision: built.library.revision, buildId: built.build.id }),
+    service.activateBuild({
+      expectedRevision: built.library.revision,
+      buildId: built.build.id,
+      reviewedKeys: built.build.keys,
+    }),
     /changed after validation/,
   );
   library = await service.read();

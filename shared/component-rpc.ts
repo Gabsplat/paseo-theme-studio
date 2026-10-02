@@ -76,7 +76,12 @@ export const buildComponents = defineRpc({
 });
 export const activateComponentBuild = defineRpc({
   name: "component.activate-build",
-  input: z.object({ expectedRevision: z.number().int().nonnegative(), buildId: z.string() }),
+  input: z.object({
+    expectedRevision: z.number().int().nonnegative(),
+    buildId: z.string(),
+    // Keys whose full source the user reviewed in the activation dialog.
+    reviewedKeys: z.array(z.string()).max(500),
+  }),
   output: z.object({ library: componentLibrarySchema, reloadRequired: z.literal(true) }),
 });
 export const publishComponent = defineRpc({
