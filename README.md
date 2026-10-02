@@ -17,26 +17,30 @@ Open **Theme Studio** in the sidebar. Choose **Theme Studio · Live** in **Setti
 
 ## Design and activate a pack
 
-The preview shows your draft. Manual edits and agent tools change that draft without changing the active pack. Saving a named library copy also leaves the active pack unchanged.
+The studio keeps a live, interactive replica of Paseo in the center: its sidebar, workspace header, tabs, chat with tool rows, terminal, changes, and composer, painted with your draft. Its own tabs switch between the agent chat, terminal, and changes; a pack panel appears in the replica's right explorer, as in Paseo. The inspector on the right changes what you edit, so the preview stays visible. Beside a chat or on narrow screens, the inspector moves below the preview.
 
-1. Open **Colors** to edit the eight appearance colors, change light/dark appearance, or protect colors with locks.
-2. Open **Design** to choose density, corner radius, typography, tool-card style, pack-note style, and workspace panels.
-3. Review the preview and the changes listed for activation.
-4. Press **Activate pack** to copy the draft into the active pack. Its registered extensions update, and its global palette updates when **Theme Studio · Live** is selected.
+Manual edits and agent tools change the draft without changing the active pack. Saving a named library copy also leaves the active pack unchanged.
 
-**Revert pack** restores the previous active pack. **Disable pack** turns off its extensions; **Revert pack** can restore the pack after disabling it. Draft undo and redo navigate draft edits, independently of the active pack.
+1. In **Colors**, edit the eight appearance colors or protect colors with locks. The sun/moon button switches light and dark.
+2. In **Design**, choose density, corner radius, typography, tool-card style, pack-note style, and workspace panels.
+3. Review the preview. The status next to the pack name shows whether the draft is active.
+4. Press **Activate** to copy the draft into the active pack. Its registered extensions update, and its global palette updates when **Theme Studio · Live** is selected.
+
+In **Packs**, **Revert** restores the previous active pack and **Disable** turns off its extensions; **Revert** can restore the pack after disabling it. **Packs** also holds presets, your saved library, and JSON import and export. Draft undo and redo navigate draft edits, independently of the active pack.
 
 Presets, named library copies, and JSON import/export retain the pack's palette and UI settings. Presets and imported or loaded packs preserve locked color values. Manual and agent patches cannot change locked colors, and undo/redo refuses a change that would alter one. Revision checks prevent concurrent manual and agent edits from silently overwriting each other.
 
 ## Save, favorite, and reuse packs
 
-**Save pack** stores a named copy of the full draft, including its palette and UI settings. In **Presets → Your library**, star a saved pack to mark it as a favorite. **Favorites only** filters the library to those packs. Unstarring changes the favorite list without changing the draft or active pack.
+**Save pack** stores a named copy of the full draft, including its palette and UI settings. In **Packs → Your library**, star a saved pack to mark it as a favorite. **Favorites only** filters the library to those packs. Unstarring changes the favorite list without changing the draft or active pack.
 
 Loading a saved pack reuses it as a draft and preserves locked colors. Review it, make any changes, and press **Activate pack** when ready. Loading or favoriting a pack does not activate it. Removing a saved pack also removes its favorite flag.
 
 ## Work with the designer
 
-**Start designer** creates an initially idle agent and opens its real Paseo chat with Theme Studio in the Explorer panel. Drag Paseo's panel divider to enlarge the preview. `/theme` opens the studio panel beside an existing agent.
+**Designer** (or **Start designer** the first time) creates an initially idle agent and opens its real Paseo chat with Theme Studio in the Explorer panel. Drag Paseo's panel divider to enlarge the preview. `/theme` opens the studio panel beside an existing agent.
+
+Theme Studio remembers whether you left the designer open. While it is open, choosing **Theme Studio** in the sidebar returns to the designer chat with the studio beside it. **Close designer** in that panel goes back to the full studio and keeps it there next time. The preference is stored in `preferences.json`, separately from your packs.
 
 The default designer uses Codex `gpt-6.1-sol` with high reasoning. Choose a provider and model through **Model** before creating a session; existing sessions retain their configuration. Creating a designer sends no prompt. Sending a native chat message uses the provider configured in Paseo.
 
@@ -60,7 +64,11 @@ Existing designers can also use component operations through `patch_theme` with 
 
 ## Component library
 
-Open **Theme Studio → Components**. The library lives inside the same studio UI, including its workspace panel and settings screen. The library shows the latest version of each component, with search, favorites, source inspection, and version history. Agent-created components appear automatically. **New version** saves a separate definition; existing instances keep their original version. Component favorites are separate from saved pack favorites.
+In the studio's **Components** inspector, select a component to see it inside the preview conversation, rendered with your draft's colors exactly as it would appear in a real chat. Interactions there stay local. From the inspector you can favorite, reset, or delete it.
+
+**Library** opens the full component view, which replaces the preview until **Back to studio**. It shows the latest version of each component, with search, favorites, source inspection, and version history. Agent-created components appear automatically. **New version** saves a separate definition; existing instances keep their original version. Component favorites are separate from saved pack favorites.
+
+**Delete** asks for confirmation, then removes every version of the component, its favorite flag, and its published instances; their chat rows say the component was deleted. Deletion is a manual UI action; agents have no delete tool.
 
 There are two creation paths:
 

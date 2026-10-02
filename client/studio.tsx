@@ -227,6 +227,8 @@ export function ThemeStudio(props: StudioProps) {
   const [error, setError] = useState<string | null>(null);
   // Beside a chat, or on small screens, the inspector moves below the preview.
   const stacked = layout.compact || (size.width > 0 && size.width < 980);
+  // Explorer panels beside a chat can be very narrow; keep toolbar labels for the key action only.
+  const tight = layout.compact || (size.width > 0 && size.width < 520);
   const query = useQuery({
     queryKey: studioQueryKey,
     queryFn: async () => {
@@ -454,6 +456,7 @@ export function ThemeStudio(props: StudioProps) {
       title="Close designer"
       icon="PanelLeftClose"
       small
+      iconOnly={tight}
       onPress={() => void closeDesigner()}
     />
   ) : (
@@ -462,6 +465,7 @@ export function ThemeStudio(props: StudioProps) {
       title={designer.isPending ? "Opening…" : document?.designerAgentId ? "Designer" : "Start designer"}
       icon="MessageSquare"
       small
+      iconOnly={tight}
       active={Boolean(preferences.data?.designerOpen && document?.designerAgentId)}
       disabled={!document || designer.isPending || !props.navigation}
       onPress={openDesigner}
@@ -525,7 +529,16 @@ export function ThemeStudio(props: StudioProps) {
         ) : null}
       </View>
       {view === "studio" ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 5,
+            flexWrap: "wrap",
+            flexShrink: 1,
+            maxWidth: "100%",
+          }}
+        >
           <StudioButton
             theme={theme}
             title="Undo"
