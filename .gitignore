@@ -2,3 +2,5 @@ node_modules/
 .paseo/
 output/
 *.log
+client/generated/
+client/generated-components.tsx

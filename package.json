@@ -11,11 +11,12 @@
     "shared/"
   ],
   "scripts": {
-    "typecheck": "node scripts/build-export-assets.mjs && tsc --noEmit",
+    "typecheck": "node scripts/ensure-generated-registry.mjs && node scripts/build-export-assets.mjs && tsc --noEmit",
     "test": "tsx --test shared/*.test.ts server/*.test.ts client/*.test.ts",
     "build:export": "node scripts/build-export-assets.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,mjs,json}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json}\"",
+    "postinstall": "node scripts/ensure-generated-registry.mjs"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.9.2",

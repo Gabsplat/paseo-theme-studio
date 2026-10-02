@@ -574,19 +574,31 @@ export class ComponentService {
       for (const [name, source] of Object.entries(expected))
         if ((await readFile(join(build.directory, name), "utf8")) !== source)
           throw new Error("Generated component build was changed after validation. Build it again before activating.");
-      // Modules are immutable. Write them first, then atomically replace the registry.
-      for (const [name, source] of Object.entries(expected).filter(([name]) => name.startsWith("client/generated/"))) {
-        const target = join(this.projectDirectory, name);
-        await mkdir(join(target, ".."), { recursive: true, mode: 0o700 });
-        await writeFile(target, source, { mode: 0o600 });
-      }
-      const registry = join(this.projectDirectory, "client/generated-components.tsx");
-      const temporary = registry + "." + randomUUID() + ".tmp";
       try {
-        await writeFile(temporary, expected["client/generated-components.tsx"], { mode: 0o600 });
-        await rename(temporary, registry);
-      } finally {
-        await rm(temporary, { force: true });
+        // Modules are immutable. Write them first, then atomically replace the registry.
+        for (const [name, source] of Object.entries(expected).filter(([name]) =>
+          name.startsWith("client/generated/"),
+        )) {
+          const target = join(this.projectDirectory, name);
+          await mkdir(join(target, ".."), { recursive: true, mode: 0o700 });
+          await writeFile(target, source, { mode: 0o600 });
+        }
+        const registry = join(this.projectDirectory, "client/generated-components.tsx");
+        const temporary = registry + "." + randomUUID() + ".tmp";
+        try {
+          await writeFile(temporary, expected["client/generated-components.tsx"], { mode: 0o600 });
+          await rename(temporary, registry);
+        } finally {
+          await rm(temporary, { force: true });
+        }
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "EACCES" || code === "EPERM" || code === "EROFS")
+          throw new Error(
+            `Theme Studio cannot write activated components into its plugin directory (${this.projectDirectory}). Install the plugin from a writable directory.`,
+            { cause: error },
+          );
+        throw error;
       }
       library.activeKeys = [...build.keys];
       return null;
