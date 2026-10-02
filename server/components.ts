@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import { mkdir, readdir, readFile, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import {
   componentActionSchema,
   componentDefinitionSchema,
@@ -20,28 +18,10 @@ import {
 } from "../shared/components";
 import { exportAssets } from "./export-assets";
 import { acquireLock, FileSnapshot, writeFileAtomic } from "./storage";
+import { clientTsconfig, typecheckDirectory, writeFiles } from "./typecheck";
 
-const exec = promisify(execFile);
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
-const compilerConfiguration = JSON.stringify(
-  {
-    compilerOptions: {
-      target: "ES2020",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      lib: ["ES2023"],
-      types: ["react"],
-      jsx: "react-jsx",
-      strict: true,
-      skipLibCheck: true,
-      noEmit: true,
-      esModuleInterop: true,
-    },
-    include: ["client/**/*.tsx", "shared/**/*.ts"],
-  },
-  null,
-  2,
-);
+const compilerConfiguration = clientTsconfig(["client/**/*.tsx", "shared/**/*.ts"]);
 export class ComponentRevisionConflict extends Error {
   constructor(public readonly revision: number) {
     super(`Component changed elsewhere. Refresh and retry with revision ${revision}.`);
@@ -542,32 +522,12 @@ export class ComponentService {
     const files = generatedFiles(definitions);
     files["shared/components.ts"] = await readFile(join(this.projectDirectory, "shared/components.ts"), "utf8");
     files["tsconfig.json"] = compilerConfiguration;
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    for (const [name, source] of Object.entries(files)) {
-      const file = join(directory, name);
-      await mkdir(join(file, ".."), { recursive: true, mode: 0o700 });
-      await writeFile(file, source, { mode: 0o600 });
-    }
-    await symlink(join(this.projectDirectory, "node_modules"), join(directory, "node_modules"), "dir");
-    try {
-      await exec(
-        process.execPath,
-        [
-          join(this.projectDirectory, "node_modules/typescript/lib/tsc.js"),
-          "--project",
-          join(directory, "tsconfig.json"),
-          "--noEmit",
-        ],
-        { timeout: 30000, maxBuffer: 1000000 },
-      );
-    } catch (error) {
-      const failure = error as Error & { stdout?: string; stderr?: string };
-      throw new Error(
-        `Component build failed typechecking. Existing registered code remains unchanged. Candidate source is preserved at ${directory}. ${(failure.stdout || failure.stderr || failure.message).slice(0, 1600)}`,
-      );
-    } finally {
-      await unlink(join(directory, "node_modules"));
-    }
+    await writeFiles(directory, files);
+    await typecheckDirectory(
+      directory,
+      this.projectDirectory,
+      `Component build failed typechecking. Existing registered code remains unchanged. Candidate source is preserved at ${directory}.`,
+    );
     return files;
   }
   async build(input: { expectedRevision: number }) {
