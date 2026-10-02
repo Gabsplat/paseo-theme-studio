@@ -1,4 +1,4 @@
-import { Component, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { TextInput } from "@getpaseo/plugin/client/react-native";
 import { useRpc, type PluginClientContext, type PluginTimelineItemProps } from "@getpaseo/plugin/client";
@@ -16,6 +16,7 @@ import {
 import { interactComponent, readComponentInstance, readComponentLibrary } from "../shared/component-rpc";
 import { generatedComponents } from "./generated-components";
 import { componentEvents, componentHasAgentUpdate } from "./component-events";
+import { ErrorBoundary } from "./error-boundary";
 
 export function CompositionRenderer({ tree, theme, state, onAction }: ComponentProps & { tree: ComponentNode }) {
   const c = theme.colors;
@@ -211,18 +212,14 @@ export function ComponentCard({
   );
 }
 
-class ComponentBoundary extends Component<{ children: ReactNode; theme: PluginTheme }, { error: string | null }> {
-  state = { error: null as string | null };
-  static getDerivedStateFromError(error: Error) {
-    return { error: error.message };
-  }
-  render() {
-    return this.state.error ? (
-      <Text style={{ color: this.props.theme.colors.statusDanger }}>Component error: {this.state.error}</Text>
-    ) : (
-      this.props.children
-    );
-  }
+function ComponentBoundary({ theme, children }: { theme: PluginTheme; children: ReactNode }) {
+  return (
+    <ErrorBoundary
+      fallback={error => <Text style={{ color: theme.colors.statusDanger }}>Component error: {error}</Text>}
+    >
+      {children}
+    </ErrorBoundary>
+  );
 }
 
 const activePollMs = 800;

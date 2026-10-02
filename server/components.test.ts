@@ -469,6 +469,7 @@ test("code import validation rejects non-native and dynamic execution but accept
     'import { Linking } from "react-native"; export default function Card(){return null}',
     'import { NativeModules as N } from "react-native"; export default function Card(){return null}',
     'import * as RN from "react-native"; export default function Card(){return null}',
+    'import { Component } from "react"; export default class Card extends Component { render() { return null } }',
   ])
     assert.throws(() => validateComponentCode(invalid), /Unsupported|native|Dynamic/i);
 });

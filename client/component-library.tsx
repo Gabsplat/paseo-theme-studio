@@ -3,7 +3,7 @@ import { useRpc } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { copyText, Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Component, type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import {
   activateComponentBuild,
@@ -26,6 +26,7 @@ import {
   type ComponentState,
 } from "../shared/components";
 import { CompositionRenderer } from "./component-runtime";
+import { ErrorBoundary } from "./error-boundary";
 import { componentLibraryQueryKey, definitionKey, DeleteComponentDialog } from "./component-inspector";
 import { generatedComponents } from "./generated-components";
 import { StudioButton, StudioCard, StudioLabel } from "./studio-ui";
@@ -81,28 +82,23 @@ function errorMessage(reason: unknown) {
 const definitionSource = (definition: ComponentDefinition) =>
   definition.mode === "composition" ? JSON.stringify(definition.tree, null, 2) : definition.code;
 
-class PreviewBoundary extends Component<{ theme: PluginTheme; children: ReactNode }, { error: string | null }> {
-  state = { error: null as string | null };
-  static getDerivedStateFromError(reason: unknown) {
-    return { error: errorMessage(reason) };
-  }
-  render() {
-    return this.state.error ? (
-      <View style={{ gap: 8, padding: 12 }}>
-        <Text
-          accessibilityRole="alert"
-          style={{ color: this.props.theme.colors.statusDanger, fontSize: 12, lineHeight: 18 }}
-        >
-          This component could not render. {this.state.error}
-        </Text>
-        <StudioLabel theme={this.props.theme} subdued>
-          Create a corrected version from its source.
-        </StudioLabel>
-      </View>
-    ) : (
-      this.props.children
-    );
-  }
+function PreviewBoundary({ theme, children }: { theme: PluginTheme; children: ReactNode }) {
+  return (
+    <ErrorBoundary
+      fallback={error => (
+        <View style={{ gap: 8, padding: 12 }}>
+          <Text accessibilityRole="alert" style={{ color: theme.colors.statusDanger, fontSize: 12, lineHeight: 18 }}>
+            This component could not render. {error}
+          </Text>
+          <StudioLabel theme={theme} subdued>
+            Create a corrected version from its source.
+          </StudioLabel>
+        </View>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
 }
 
 function ComponentTile({

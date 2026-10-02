@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { componentEventPrompt } from "../shared/component-event";
 import type { ComponentEvent, ComponentInstance, ComponentLibrary } from "../shared/components";
-import { ComponentEventIndex, componentHasAgentUpdate } from "./component-events";
+import { componentHasAgentUpdate, createComponentEventIndex } from "./component-events";
 
 const event: ComponentEvent = {
   id: "0f862be9-1ff4-4fe5-bf49-2af71699e893",
@@ -37,7 +37,7 @@ const message = (text = componentEventPrompt(instance, event), clientMessageId =
 });
 
 test("only the native message ID and complete persisted owned payload hide a queued interaction", () => {
-  const index = new ComponentEventIndex();
+  const index = createComponentEventIndex();
   assert.equal(index.hides(message()), false);
   index.updateLibrary(library(instance));
   assert.equal(index.hides(message()), true);
@@ -48,7 +48,7 @@ test("only the native message ID and complete persisted owned payload hide a que
 });
 
 test("ordinary user messages, copied technical text in another agent, and provider-ID coincidences remain visible", () => {
-  const index = new ComponentEventIndex();
+  const index = createComponentEventIndex();
   index.updateInstance(instance);
   assert.equal(index.hides(message("Please show me the middle option.")), false);
   assert.equal(index.hides(message("The user explicitly interacted with a Theme Studio component.")), false);
@@ -58,7 +58,7 @@ test("ordinary user messages, copied technical text in another agent, and provid
 });
 
 test("wrong owner, action, state, version, and extra payload fields fail open even with an event UUID", () => {
-  const index = new ComponentEventIndex();
+  const index = createComponentEventIndex();
   index.updateInstance(instance);
   const payload = JSON.parse(message().text.split("\n").at(-1)!);
   for (const change of [
@@ -74,7 +74,7 @@ test("wrong owner, action, state, version, and extra payload fields fail open ev
 });
 
 test("verified legacy payloads survive prompt wording changes without prefix-based hiding", () => {
-  const index = new ComponentEventIndex();
+  const index = createComponentEventIndex();
   index.updateInstance(instance);
   const payload = JSON.parse(message().text.split("\n").at(-1)!);
   delete payload.agentId;
@@ -89,16 +89,16 @@ test("verified legacy payloads survive prompt wording changes without prefix-bas
 });
 
 test("ambiguous event IDs from different owners or duplicate persisted events never hide messages", () => {
-  const index = new ComponentEventIndex();
+  const index = createComponentEventIndex();
   index.updateLibrary(library(instance, { ...instance, id: "instance-two", agentId: "agent-other" }));
   assert.equal(index.hides(message()), false);
-  const duplicate = new ComponentEventIndex();
+  const duplicate = createComponentEventIndex();
   duplicate.updateInstance({ ...instance, events: [event, event] });
   assert.equal(duplicate.hides(message()), false);
 });
 
 test("input-only events cannot hide chat and stale snapshots cannot overwrite a newer verified instance", () => {
-  const index = new ComponentEventIndex();
+  const index = createComponentEventIndex();
   index.updateInstance({
     ...instance,
     events: [{ ...event, action: { action: "__state__", patch: { input: "draft" } } }],
@@ -113,7 +113,7 @@ test("input-only events cannot hide chat and stale snapshots cannot overwrite a 
 });
 
 test("projection refreshes happen only when the verified allowlist changes, not on agent state or delivery updates", () => {
-  const index = new ComponentEventIndex();
+  const index = createComponentEventIndex();
   let refreshes = 0;
   const unsubscribe = index.subscribe(() => {
     refreshes++;

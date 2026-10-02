@@ -202,6 +202,8 @@ export function validateComponentCode(code: string, projectDirectory: string = e
       throw new Error(
         `Unsupported component capability ${node.text}. Components use native UI and the provided onAction callback.`,
       );
+    if (ts.isClassDeclaration(node) || ts.isClassExpression(node))
+      throw new Error("Unsupported class syntax. Use function components; Paseo mobile cannot run classes.");
     if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)
       throw new Error("Dynamic imports are not supported in generated components.");
     if (

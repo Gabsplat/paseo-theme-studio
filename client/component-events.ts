@@ -17,49 +17,36 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-/** Only persisted, uniquely owned event IDs can suppress a native message. */
-export class ComponentEventIndex {
-  private instances = new Map<string, ComponentInstance>();
-  private instanceSignatures = new Map<string, string>();
-  private messages = new Map<string, Set<string>>();
-  private listeners = new Set<() => void>();
-  private signature = "";
+/**
+ * Only persisted, uniquely owned event IDs can suppress a native message.
+ * A factory rather than a class: Paseo mobile evaluates plugin bundles with Hermes,
+ * which rejects class syntax.
+ */
+export function createComponentEventIndex() {
+  const instances = new Map<string, ComponentInstance>();
+  const instanceSignatures = new Map<string, string>();
+  let messages = new Map<string, Set<string>>();
+  const listeners = new Set<() => void>();
+  let signature = "";
 
-  updateLibrary(library: ComponentLibrary) {
-    let changed = false;
-    for (const instance of library.instances) changed = this.remember(instance) || changed;
-    if (changed) this.rebuild();
-  }
-
-  updateInstance(instance: ComponentInstance) {
-    if (this.remember(instance)) this.rebuild();
-  }
-
-  subscribe(listener: () => void) {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-
-  private remember(instance: ComponentInstance) {
-    const previous = this.instances.get(instance.id);
+  function remember(instance: ComponentInstance) {
+    const previous = instances.get(instance.id);
     if (previous && instance.revision < previous.revision) return false;
-    const signature = JSON.stringify({
+    const next = JSON.stringify({
       agentId: instance.agentId,
       componentId: instance.componentId,
       version: instance.componentVersion,
       events: instance.events.map(({ dispatchedAt: _delivery, ...event }) => event),
     });
-    const changed = signature !== this.instanceSignatures.get(instance.id);
-    this.instances.set(instance.id, instance);
-    this.instanceSignatures.set(instance.id, signature);
+    const changed = next !== instanceSignatures.get(instance.id);
+    instances.set(instance.id, instance);
+    instanceSignatures.set(instance.id, next);
     return changed;
   }
 
-  private rebuild() {
+  function rebuild() {
     const candidates = new Map<string, { count: number; payloads: Set<string> }>();
-    for (const instance of this.instances.values())
+    for (const instance of instances.values())
       for (const event of instance.events) {
         if (event.action.action === "__state__" || !eventIdPattern.test(event.id)) continue;
         const entry = candidates.get(event.id) ?? { count: 0, payloads: new Set<string>() };
@@ -72,31 +59,47 @@ export class ComponentEventIndex {
         entry.payloads.add(canonical(legacy));
         candidates.set(event.id, entry);
       }
-    const messages = new Map(
+    const next = new Map(
       [...candidates].filter(([, entry]) => entry.count === 1).map(([id, entry]) => [id, entry.payloads]),
     );
-    const signature = canonical(
-      [...messages].sort(([a], [b]) => a.localeCompare(b)).map(([id, payloads]) => [id, [...payloads].sort()]),
+    const nextSignature = canonical(
+      [...next].sort(([a], [b]) => a.localeCompare(b)).map(([id, payloads]) => [id, [...payloads].sort()]),
     );
-    this.messages = messages;
-    if (signature === this.signature) return;
-    this.signature = signature;
-    for (const listener of this.listeners) listener();
+    messages = next;
+    if (nextSignature === signature) return;
+    signature = nextSignature;
+    for (const listener of listeners) listener();
   }
 
-  hides(item: UserMessage): boolean {
-    const id = item.clientMessageId ?? item.messageId;
-    if (!id) return false;
-    const expected = this.messages.get(id);
-    if (!expected) return false;
-    try {
-      // No prefix or regex decides visibility: the complete immutable payload
-      // and native message identity must both match the persisted event.
-      return expected.has(canonical(JSON.parse(item.text.trim().split("\n").at(-1)!)));
-    } catch {
-      return false;
-    }
-  }
+  return {
+    updateLibrary(library: ComponentLibrary) {
+      let changed = false;
+      for (const instance of library.instances) changed = remember(instance) || changed;
+      if (changed) rebuild();
+    },
+    updateInstance(instance: ComponentInstance) {
+      if (remember(instance)) rebuild();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    hides(item: UserMessage): boolean {
+      const id = item.clientMessageId ?? item.messageId;
+      if (!id) return false;
+      const expected = messages.get(id);
+      if (!expected) return false;
+      try {
+        // No prefix or regex decides visibility: the complete immutable payload
+        // and native message identity must both match the persisted event.
+        return expected.has(canonical(JSON.parse(item.text.trim().split("\n").at(-1)!)));
+      } catch {
+        return false;
+      }
+    },
+  };
 }
 
 export function componentHasAgentUpdate(instance: ComponentInstance): boolean {
@@ -107,4 +110,4 @@ export function componentHasAgentUpdate(instance: ComponentInstance): boolean {
   return canonical(instance.state) !== canonical(expected);
 }
 
-export const componentEvents = new ComponentEventIndex();
+export const componentEvents = createComponentEventIndex();
