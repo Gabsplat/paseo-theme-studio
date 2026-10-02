@@ -77,6 +77,7 @@ export type ComponentDrainResult = {
 };
 type Paseo = PluginHandlerContext["paseo"];
 type Agent = ReturnType<Paseo["agents"]["ref"]>;
+type TimelineEntry = Awaited<ReturnType<Agent["timeline"]["refetch"]>>["entries"][number];
 const triggerInputSchema = z
   .object({
     componentId: componentIdSchema,
@@ -240,7 +241,16 @@ export class ComponentController {
     throw new Error("The component library kept changing. Retry the trigger shortly.");
   }
 
-  private async latestNativeUser(agent: Agent, agentId: string) {
+  /**
+   * Scans an agent's canonical timeline from newest to oldest, one page at a time,
+   * until `pick` finds a match. Returns undefined after the oldest page.
+   */
+  private async searchTimeline<T>(
+    agent: Agent,
+    agentId: string,
+    pick: (entries: TimelineEntry[]) => T | undefined,
+    errors: { unverified: string; incomplete: string },
+  ): Promise<T | undefined> {
     let cursor: { epoch: string; seq: number } | undefined;
     for (let page = 0; page < 100; page++) {
       const timeline = await agent.timeline.refetch({
@@ -249,20 +259,27 @@ export class ComponentController {
         ...(cursor ? { cursor } : {}),
         limit: 100,
       });
-      if (timeline.error || timeline.staleCursor || timeline.agentId !== agentId)
-        throw new Error("The trigger's native conversation could not be verified.");
-      const user = timeline.entries.findLast(entry => entry.item.type === "user_message");
-      if (user) return user;
+      if (timeline.error || timeline.staleCursor || timeline.agentId !== agentId) throw new Error(errors.unverified);
+      const found = pick(timeline.entries);
+      if (found !== undefined) return found;
       if (!timeline.hasOlder) return undefined;
-      if (
-        !timeline.startCursor ||
-        (cursor && timeline.startCursor.epoch === cursor.epoch && timeline.startCursor.seq >= cursor.seq) ||
-        page === 99
-      )
-        throw new Error("The trigger's native conversation could not be fully checked. Retry shortly.");
+      const stalled = cursor && timeline.startCursor?.epoch === cursor.epoch && timeline.startCursor.seq >= cursor.seq;
+      if (!timeline.startCursor || stalled) break;
       cursor = timeline.startCursor;
     }
-    throw new Error("The trigger's native conversation could not be fully checked. Retry shortly.");
+    throw new Error(errors.incomplete);
+  }
+
+  private latestNativeUser(agent: Agent, agentId: string) {
+    return this.searchTimeline(
+      agent,
+      agentId,
+      entries => entries.findLast(entry => entry.item.type === "user_message"),
+      {
+        unverified: "The trigger's native conversation could not be verified.",
+        incomplete: "The trigger's native conversation could not be fully checked. Retry shortly.",
+      },
+    );
   }
 
   private ensureTriggeredRow(agent: Agent, instance: ComponentInstance, reused: boolean): Promise<void> {
@@ -280,20 +297,11 @@ export class ComponentController {
 
   private async appendTriggeredRow(agent: Agent, instance: ComponentInstance, reused: boolean): Promise<void> {
     if (reused) {
-      let cursor: { epoch: string; seq: number } | undefined;
-      for (let page = 0; page < 100; page++) {
-        const timeline = await agent.timeline.refetch({
-          projection: "canonical",
-          direction: cursor ? "before" : "tail",
-          ...(cursor ? { cursor } : {}),
-          limit: 100,
-        });
-        if (timeline.error || timeline.staleCursor || timeline.agentId !== instance.agentId)
-          throw new Error(
-            "The existing component publication could not be verified. Retry without creating another instance.",
-          );
-        if (
-          timeline.entries.some(({ item }) => {
+      const published = await this.searchTimeline(
+        agent,
+        instance.agentId,
+        entries =>
+          entries.some(({ item }) => {
             if (
               item.type !== "plugin" ||
               item.pluginId !== "theme-studio" ||
@@ -308,18 +316,14 @@ export class ComponentController {
               pointer.data.componentId === instance.componentId &&
               pointer.data.componentVersion === instance.componentVersion
             );
-          })
-        )
-          return;
-        if (!timeline.hasOlder) break;
-        if (
-          !timeline.startCursor ||
-          (cursor && timeline.startCursor.epoch === cursor.epoch && timeline.startCursor.seq >= cursor.seq) ||
-          page === 99
-        )
-          throw new Error("The existing component publication could not be fully checked. Retry shortly.");
-        cursor = timeline.startCursor;
-      }
+          }) || undefined,
+        {
+          unverified:
+            "The existing component publication could not be verified. Retry without creating another instance.",
+          incomplete: "The existing component publication could not be fully checked. Retry shortly.",
+        },
+      );
+      if (published) return;
     }
     if (this.closed) throw new Error("The component controller has stopped.");
     const data = componentTimelineSchema.parse({
