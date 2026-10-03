@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { dirname } from "node:path";
 import { spawn } from "node:child_process";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import { readStudio, changeStudio, startDesigner, exportPack } from "./shared/rpc";
+import { readStudio, readActiveTheme, changeStudio, startDesigner, exportPack } from "./shared/rpc";
 import { StudioStore } from "./server/store";
 import { ThemeBridge } from "./server/bridge";
 import { Designer } from "./server/designer";
@@ -133,6 +133,10 @@ export default function contribute(server: PluginServerContext) {
   server.handle(readStudio, (_, context) => {
     bind(context);
     return store.read();
+  });
+  server.handle(readActiveTheme, async (_, context) => {
+    bind(context);
+    return (await store.read()).active;
   });
   server.handle(readStudioPreferences, () => preferences.read());
   server.handle(changeStudioPreferences, input => preferences.change(input));

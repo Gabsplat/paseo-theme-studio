@@ -3,13 +3,14 @@ import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { ThemeStudio } from "./client/studio";
 import { PackActivity, registerPackExtensions } from "./client/pack-runtime";
-import { readStudio } from "./shared/rpc";
-import type { StudioDocument, StudioTheme } from "./shared/theme";
+import { readActiveTheme, readStudio } from "./shared/rpc";
+import type { StudioTheme } from "./shared/theme";
 import { registerComponents } from "./client/component-runtime";
 
 export default function contribute(client: PluginClientContext) {
   let disposed = false;
   let busy = false;
+  let documentApplied = false;
   let themeSignature = "";
   let activeSignature = "";
   let panelSignature = "";
@@ -41,9 +42,8 @@ export default function contribute(client: PluginClientContext) {
       );
     return <PackActivity theme={props.theme} workspaceId={props.workspaceId} pack={pack} />;
   }
-  function updateActive(document: StudioDocument) {
+  function applyActive(pack: StudioTheme | null) {
     if (disposed) return;
-    const pack = document.active;
     const next = JSON.stringify(pack ? { colors: pack.colors, appearance: pack.appearance } : null);
     if (next !== themeSignature) {
       void removeTheme?.();
@@ -105,7 +105,8 @@ export default function contribute(client: PluginClientContext) {
     if (disposed || busy) return;
     busy = true;
     try {
-      updateActive(await client.rpc(readStudio, {}));
+      applyActive((await client.rpc(readStudio, {})).active);
+      documentApplied = true;
     } catch {
       /* The studio reports connection failures; retain the last active design. */
     } finally {
@@ -115,6 +116,14 @@ export default function contribute(client: PluginClientContext) {
   const timer = setInterval(() => {
     void refresh();
   }, 800);
+  client
+    .rpc(readActiveTheme, {})
+    .then(pack => {
+      if (!documentApplied) applyActive(pack);
+    })
+    .catch(() => {
+      /* The full refresh below reports and retries connection failures. */
+    });
   void refresh();
   function openPreview(workspaceId: string, agentId: string) {
     client.openPanel("studio", { workspaceId, agentId, location: "explorer" });

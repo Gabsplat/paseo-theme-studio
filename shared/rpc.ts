@@ -1,7 +1,13 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import { actionSchema, documentSchema } from "./theme";
+import { actionSchema, documentSchema, themeSchema } from "./theme";
 export const readStudio = defineRpc({ name: "studio.read", input: z.object({}), output: documentSchema });
+// Returns only the active pack so clients can register the theme without downloading the whole document.
+export const readActiveTheme = defineRpc({
+  name: "studio.active-theme",
+  input: z.object({}).strict(),
+  output: themeSchema.nullable(),
+});
 export const changeStudio = defineRpc({
   name: "studio.change",
   input: z.object({ expectedRevision: z.number().int(), action: actionSchema }),
