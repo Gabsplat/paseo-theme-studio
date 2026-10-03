@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdir, symlink, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { access, mkdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -37,22 +37,49 @@ export async function writeFiles(directory: string, files: Record<string, string
   }
 }
 
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Finds the `node_modules` that holds this plugin's TypeScript. A development checkout has
+ * its own; an npm installation shares the one its package was installed into.
+ */
+export async function findModules(projectDirectory: string): Promise<string> {
+  for (let directory = projectDirectory; ; directory = dirname(directory)) {
+    const modules = join(directory, "node_modules");
+    if (await exists(join(modules, "typescript", "package.json"))) return modules;
+    if (dirname(directory) === directory)
+      throw new Error(
+        "TypeScript is not installed next to Theme Studio. Install the plugin from npm, or run `pnpm install` in its directory.",
+      );
+  }
+}
+
 /**
  * Typechecks `directory` with this project's TypeScript and dependencies.
  * On failure, throws `failure` followed by the compiler output.
  */
 export async function typecheckDirectory(directory: string, projectDirectory: string, failure: string): Promise<void> {
+  const dependencies = await findModules(projectDirectory);
+  // Paseo installs published plugins without development dependencies, so the React Native
+  // and plugin SDK types that generated code is checked against are only present in a checkout.
+  for (const name of ["@types/react", "react-native", "@getpaseo/plugin"])
+    if (!(await exists(join(dependencies, name, "package.json"))))
+      throw new Error(
+        "Typechecking generated code needs Theme Studio's development dependencies, which this installation does not include. Clone the repository, run `pnpm install`, and install the plugin from that directory.",
+      );
   const modules = join(directory, "node_modules");
-  await symlink(join(projectDirectory, "node_modules"), modules, "dir");
+  await symlink(dependencies, modules, "dir");
   try {
     await exec(
       process.execPath,
-      [
-        join(projectDirectory, "node_modules/typescript/lib/tsc.js"),
-        "--project",
-        join(directory, "tsconfig.json"),
-        "--noEmit",
-      ],
+      [join(dependencies, "typescript/lib/tsc.js"), "--project", join(directory, "tsconfig.json"), "--noEmit"],
       { timeout: 30000, maxBuffer: 1000000 },
     );
   } catch (error) {

@@ -1,22 +1,50 @@
 {
   "name": "paseo-theme-studio",
-  "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
+  "description": "Design Paseo themes and UI packs with a live preview, 60 starting palettes, and a companion designer agent.",
+  "license": "Apache-2.0",
+  "author": "Gabsplat",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gabsplat/paseo-theme-studio.git"
+  },
+  "homepage": "https://github.com/Gabsplat/paseo-theme-studio#readme",
+  "bugs": {
+    "url": "https://github.com/Gabsplat/paseo-theme-studio/issues"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "theme",
+    "design"
+  ],
   "files": [
     "paseo-plugin.json",
     "index.client.tsx",
     "index.server.ts",
     "client/",
     "server/",
-    "shared/"
+    "shared/",
+    "images/",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "!**/*.test.ts",
+    "!client/generated/"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "node scripts/ensure-generated-registry.mjs && node scripts/build-export-assets.mjs && tsc --noEmit",
     "test": "tsx --test shared/*.test.ts server/*.test.ts client/*.test.ts",
     "build:export": "node scripts/build-export-assets.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,mjs,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json}\"",
-    "postinstall": "node scripts/ensure-generated-registry.mjs && node scripts/build-export-assets.mjs"
+    "prepublishOnly": "node scripts/ensure-generated-registry.mjs --check && pnpm typecheck && pnpm test"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.9.2",
@@ -29,7 +57,6 @@
     "react": "19.1.0",
     "react-native": "0.81.5",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.3",
     "zod": "^4.4.3"
   },
   "packageManager": "pnpm@12.5.1"

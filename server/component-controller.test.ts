@@ -11,7 +11,7 @@ import { StudioStore } from "./store";
 
 async function fixture(t: { after(callback: () => Promise<void>): void }) {
   const directory = await mkdtemp(join(tmpdir(), "component-controller-test-"));
-  const service = new ComponentService(directory);
+  const service = new ComponentService(directory, async () => process.cwd());
   const studio = new StudioStore(directory);
   const initial = await studio.read();
   await studio.mutate(initial.revision, document => ({
@@ -263,7 +263,7 @@ test("busy and permission-blocked owners retain explicit events, then concurrent
   assert.equal(sendRequests[0].messageId, first.event.id);
   assert.equal((await service.readInstance(instance.id)).events[1].dispatchedAt, null);
   status.value = "idle";
-  const restarted = new ComponentController(new ComponentService(service.directory), studio);
+  const restarted = new ComponentController(new ComponentService(service.directory, async () => process.cwd()), studio);
   restarted.bind(paseo);
   await restarted.drain();
   await restarted.drain();

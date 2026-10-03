@@ -16,9 +16,9 @@ import {
   type ComponentLibrary,
   type ComponentState,
 } from "../shared/components";
-import { exportAssets } from "./export-assets";
+import { locateProject } from "./project";
 import { acquireLock, FileSnapshot, writeFileAtomic } from "./storage";
-import { clientTsconfig, typecheckDirectory, writeFiles } from "./typecheck";
+import { clientTsconfig, findModules, typecheckDirectory, writeFiles } from "./typecheck";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const compilerConfiguration = clientTsconfig(["client/**/*.tsx", "shared/**/*.ts"]);
@@ -124,10 +124,10 @@ const restrictedNativeImports = new Set([
  * Rejects obvious capability use in generated source. This is a best-effort filter,
  * not a sandbox: activation requires the user to review the full source.
  */
-export function validateComponentCode(code: string, projectDirectory: string = exportAssets.projectDirectory): void {
+export function validateComponentCode(code: string, modules: string): void {
   if (!code.trim() || code.length > 40000) throw new Error("Component source must contain 1–40,000 characters.");
-  const ts = createRequire(join(projectDirectory, "package.json"))(
-    join(projectDirectory, "node_modules/typescript/lib/typescript.js"),
+  const ts = createRequire(join(modules, "typescript/package.json"))(
+    join(modules, "typescript/lib/typescript.js"),
   ) as typeof import("typescript");
   const file = ts.createSourceFile("component.tsx", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const diagnostics =
@@ -251,7 +251,8 @@ export class ComponentService {
   private readonly snapshot: FileSnapshot<ComponentLibrary>;
   constructor(
     readonly directory: string,
-    readonly projectDirectory: string = exportAssets.projectDirectory,
+    /** The plugin's install directory; found through the daemon when omitted. */
+    private readonly project: () => Promise<string> = locateProject,
   ) {
     this.file = join(directory, "components.json");
     this.snapshot = new FileSnapshot(this.file);
@@ -357,7 +358,7 @@ export class ComponentService {
   }
   async createCode(input: { expectedRevision: number; id: string; name: string; code: string; triggers?: unknown }) {
     const triggers = input.triggers === undefined ? undefined : componentTriggersSchema.parse(input.triggers);
-    validateComponentCode(input.code, this.projectDirectory);
+    validateComponentCode(input.code, await findModules(await this.project()));
     const snapshot = await this.read();
     if (snapshot.revision !== input.expectedRevision) throw new ComponentRevisionConflict(snapshot.revision);
     const version =
@@ -546,12 +547,13 @@ export class ComponentService {
   }
   private async checkSources(definitions: ComponentDefinition[], directory: string) {
     const files = generatedFiles(definitions);
-    files["shared/components.ts"] = await readFile(join(this.projectDirectory, "shared/components.ts"), "utf8");
+    const projectDirectory = await this.project();
+    files["shared/components.ts"] = await readFile(join(projectDirectory, "shared/components.ts"), "utf8");
     files["tsconfig.json"] = compilerConfiguration;
     await writeFiles(directory, files);
     await typecheckDirectory(
       directory,
-      this.projectDirectory,
+      projectDirectory,
       `Component build failed typechecking. Existing registered code remains unchanged. Candidate source is preserved at ${directory}.`,
     );
     return files;
@@ -561,8 +563,9 @@ export class ComponentService {
     if (snapshot.revision !== input.expectedRevision) throw new ComponentRevisionConflict(snapshot.revision);
     const definitions = snapshot.definitions.filter(item => item.mode === "code");
     if (!definitions.length) throw new Error("Create a code component before building.");
+    const modules = await findModules(await this.project());
     for (const definition of definitions)
-      if (definition.mode === "code") validateComponentCode(definition.code, this.projectDirectory);
+      if (definition.mode === "code") validateComponentCode(definition.code, modules);
     const id = randomUUID();
     const directory = join(this.directory, "component-builds", id);
     const files = await this.checkSources(definitions, directory);
@@ -592,6 +595,7 @@ export class ComponentService {
     };
   }
   async activateBuild(input: { expectedRevision: number; buildId: string; reviewedKeys: readonly string[] }) {
+    const projectDirectory = await this.project();
     const { library } = await this.mutate(input.expectedRevision, async library => {
       const build = library.builds.find(item => item.id === input.buildId);
       if (!build) throw new Error("Validated component build was not found.");
@@ -604,7 +608,7 @@ export class ComponentService {
         throw new Error("Review the source of each new component version before activating it.");
       const definitions = library.definitions.filter(item => build.keys.includes(`${item.id}@${item.version}`));
       const expected = generatedFiles(definitions);
-      expected["shared/components.ts"] = await readFile(join(this.projectDirectory, "shared/components.ts"), "utf8");
+      expected["shared/components.ts"] = await readFile(join(projectDirectory, "shared/components.ts"), "utf8");
       expected["tsconfig.json"] = compilerConfiguration;
       for (const [name, source] of Object.entries(expected))
         if ((await readFile(join(build.directory, name), "utf8")) !== source)
@@ -614,11 +618,11 @@ export class ComponentService {
         for (const [name, source] of Object.entries(expected).filter(([name]) =>
           name.startsWith("client/generated/"),
         )) {
-          const target = join(this.projectDirectory, name);
+          const target = join(projectDirectory, name);
           await mkdir(join(target, ".."), { recursive: true, mode: 0o700 });
           await writeFile(target, source, { mode: 0o600 });
         }
-        const registry = join(this.projectDirectory, "client/generated-components.tsx");
+        const registry = join(projectDirectory, "client/generated-components.tsx");
         const temporary = registry + "." + randomUUID() + ".tmp";
         try {
           await writeFile(temporary, expected["client/generated-components.tsx"], { mode: 0o600 });
@@ -630,7 +634,7 @@ export class ComponentService {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === "EACCES" || code === "EPERM" || code === "EROFS")
           throw new Error(
-            `Theme Studio cannot write activated components into its plugin directory (${this.projectDirectory}). Install the plugin from a writable directory.`,
+            `Theme Studio cannot write activated components into its plugin directory (${projectDirectory}). Install the plugin from a writable directory.`,
             { cause: error },
           );
         throw error;

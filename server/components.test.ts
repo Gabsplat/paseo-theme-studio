@@ -5,7 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { componentTriggersSchema, parseComponentTree, type ComponentNode } from "../shared/components";
 import { ComponentRevisionConflict, ComponentService, validateComponentCode } from "./components";
-import { exportAssets } from "./export-assets";
+
+// Tests run from the repository root, which is the plugin's install directory.
+const repository = process.cwd();
 
 async function fixture(t: { after(callback: () => Promise<void>): void }) {
   const directory = await mkdtemp(join(tmpdir(), "paseo-components-test-"));
@@ -14,11 +16,11 @@ async function fixture(t: { after(callback: () => Promise<void>): void }) {
   await mkdir(join(project, "client"));
   await writeFile(
     join(project, "shared/components.ts"),
-    await readFile(join(exportAssets.projectDirectory, "shared/components.ts"), "utf8"),
+    await readFile(join(repository, "shared/components.ts"), "utf8"),
   );
   await writeFile(join(project, "client/generated-components.tsx"), "export const generatedComponents = {};\n");
-  await symlink(join(exportAssets.projectDirectory, "node_modules"), join(project, "node_modules"), "dir");
-  const service = new ComponentService(join(directory, "storage"), project);
+  await symlink(join(repository, "node_modules"), join(project, "node_modules"), "dir");
+  const service = new ComponentService(join(directory, "storage"), async () => project);
   t.after(async () => {
     await service.close();
     await rm(directory, { recursive: true, force: true });
@@ -88,7 +90,7 @@ test("component triggers are versioned, inherited only when omitted, and preserv
     triggers: [],
   });
   assert.deepEqual(cleared.definition.triggers, []);
-  const library = await new ComponentService(service.directory).read();
+  const library = await new ComponentService(service.directory, async () => repository).read();
   assert.deepEqual(library.definitions[0], first.definition);
   assert.deepEqual(library.definitions[1], inherited.definition);
   assert.equal(library.instances[0].componentVersion, 1);
@@ -111,7 +113,7 @@ test("legacy definitions default to no triggers without rewriting storage or cha
   delete legacy.definitions[0].triggers;
   const before = JSON.stringify(legacy);
   await writeFile(service.file, before);
-  const restored = await new ComponentService(service.directory).read();
+  const restored = await new ComponentService(service.directory, async () => repository).read();
   assert.equal(restored.revision, created.library.revision);
   assert.deepEqual(restored.definitions[0].triggers, []);
   assert.equal(await readFile(service.file, "utf8"), before);
@@ -156,7 +158,7 @@ test("invalid triggers reject both component modes before persistence or source 
 
 test("concurrent trigger retries reuse one pinned instance without replacing user state or advancing revision", async t => {
   const { service, project } = await fixture(t);
-  const other = new ComponentService(service.directory, project);
+  const other = new ComponentService(service.directory, async () => project);
   const initial = await service.read();
   const created = await service.createComposition({
     expectedRevision: initial.revision,
@@ -199,7 +201,7 @@ test("concurrent trigger retries reuse one pinned instance without replacing use
 
 test("reloaded provider turn IDs remain separate by the real turn start, including concurrent retries and persisted reads", async t => {
   const { service, project } = await fixture(t);
-  const other = new ComponentService(service.directory, project);
+  const other = new ComponentService(service.directory, async () => project);
   const created = await service.createComposition({
     expectedRevision: (await service.read()).revision,
     id: "context-card",
@@ -230,7 +232,7 @@ test("reloaded provider turn IDs remain separate by the real turn start, includi
   assert.notEqual(retried[0].instance.id, first.instance.id);
   assert.equal(retried[0].instance.trigger?.turnId, first.instance.trigger?.turnId);
   assert.equal(retried[0].instance.trigger?.turnStartedAt, nextInput.trigger.turnStartedAt);
-  const restored = await new ComponentService(service.directory, project).read();
+  const restored = await new ComponentService(service.directory, async () => project).read();
   assert.equal(restored.instances.length, 2);
   assert.equal(restored.revision, first.library.revision + 1);
   assert.deepEqual(restored.instances[0], first.instance);
@@ -253,7 +255,7 @@ test("legacy trigger provenance without a start stays readable and is distinct f
   };
   const legacy = await service.createInstance({ ...input, expectedRevision: created.library.revision });
   const before = await readFile(service.file, "utf8");
-  const restored = await new ComponentService(service.directory, project).read();
+  const restored = await new ComponentService(service.directory, async () => project).read();
   assert.equal(Object.hasOwn(restored.instances[0].trigger!, "turnStartedAt"), false);
   assert.equal(await readFile(service.file, "utf8"), before);
   const retry = await service.createInstance({
@@ -318,7 +320,7 @@ test("trigger identity separates owners, turns, occurrences, and immutable versi
   assert.equal(new Set(instances.map(instance => instance.id)).size, 5);
   assert.equal(instances[0].componentVersion, 1);
   assert.equal(instances[4].componentVersion, 2);
-  const restored = await new ComponentService(service.directory).read();
+  const restored = await new ComponentService(service.directory, async () => repository).read();
   assert.deepEqual(restored.instances, instances);
   const normal = await service.createInstance({
     componentId: base.componentId,
@@ -392,14 +394,14 @@ test("composition versions and favorites persist independently of their instance
     favorite: true,
   });
   assert.deepEqual(favorite.favorites, ["checklist"]);
-  assert.deepEqual(await new ComponentService(service.directory).read(), favorite);
+  assert.deepEqual(await new ComponentService(service.directory, async () => repository).read(), favorite);
   assert.equal((await stat(service.file)).mode & 0o777, 0o600);
 });
 
 test("concurrent library and instance updates reject stale revisions without losing data", async t => {
   const { service } = await fixture(t);
   const initial = await service.read();
-  const other = new ComponentService(service.directory);
+  const other = new ComponentService(service.directory, async () => repository);
   const results = await Promise.allSettled([
     service.createComposition({ expectedRevision: initial.revision, id: "one", name: "One", tree }),
     other.createComposition({ expectedRevision: initial.revision, id: "two", name: "Two", tree }),
@@ -455,7 +457,7 @@ test("bounded composition validates interactive data and rejects recursion, unsa
 });
 
 test("code import validation rejects non-native and dynamic execution but accepts public typed JSX", () => {
-  validateComponentCode(source);
+  validateComponentCode(source, join(repository, "node_modules"));
   for (const invalid of [
     'import fs from "node:fs"; export default function Card(){return null}',
     'import {Icon} from "lucide-react-native"; export default function Card(){return null}',
@@ -471,7 +473,10 @@ test("code import validation rejects non-native and dynamic execution but accept
     'import * as RN from "react-native"; export default function Card(){return null}',
     'import { Component } from "react"; export default class Card extends Component { render() { return null } }',
   ])
-    assert.throws(() => validateComponentCode(invalid), /Unsupported|native|Dynamic/i);
+    assert.throws(
+      () => validateComponentCode(invalid, join(repository, "node_modules")),
+      /Unsupported|native|Dynamic/i,
+    );
 });
 
 test("code builds typecheck all immutable versions before manual activation and preserve historical renderers", async t => {

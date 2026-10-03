@@ -3,4 +3,3 @@ node_modules/
 output/
 *.log
 client/generated/
-client/generated-components.tsx

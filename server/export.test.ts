@@ -24,7 +24,7 @@ test("export produces a typechecked standalone pack without agent state or tooli
         },
       },
     });
-    const exporter = new PackExporter(store);
+    const exporter = new PackExporter(store, async () => process.cwd());
     await assert.rejects(exporter.export({ expectedRevision: first.revision }), /changed elsewhere/);
     const result = await exporter.export({ expectedRevision: draft.revision });
     assert.equal(result.validation.typecheck, true);
