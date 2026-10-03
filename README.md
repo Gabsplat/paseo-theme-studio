@@ -2,6 +2,10 @@
 
 Design how [Paseo](https://paseo.sh) looks without leaving Paseo. Theme Studio is a plugin with a live replica of the app that repaints as you edit, 60 starting palettes, and a designer agent that edits the same draft you do.
 
+[![Watch the 29-second demo](media/theme-studio-demo-poster.jpg)](https://github.com/Gabsplat/paseo-theme-studio/raw/main/media/theme-studio-demo.mp4)
+
+*Click the image to watch the 29-second demo.*
+
 ![Theme Studio with the palette inspector open](images/studio.png)
 
 ## What you get
