@@ -5,11 +5,11 @@ import {
   actionSchema,
   documentSchema,
   initialDocument,
-  presets,
   type StudioAction,
   type StudioDocument,
   type StudioTheme,
 } from "../shared/theme";
+import { presets } from "../shared/presets";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 export class RevisionConflict extends Error {

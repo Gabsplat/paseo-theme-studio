@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { colorKeys, hexSchema, paletteSchema, presets, packUiSchema } from "../shared/theme";
+import { colorKeys, hexSchema, paletteSchema, packUiSchema } from "../shared/theme";
+import { presetCredits, presets } from "../shared/presets";
 import {
   componentCreateSchema,
   componentCodeSchema,
@@ -203,7 +204,12 @@ export function capabilities() {
     uiSchema: z.toJSONSchema(packUiSchema),
     componentTreeSchema: z.toJSONSchema(componentNodeSchema),
     tools: toolDefinitions,
-    presets: presets.map(({ id, name, appearance }) => ({ id, name, appearance })),
+    presets: presets.map(({ id, name, appearance }) => ({
+      id,
+      name,
+      appearance,
+      ...(presetCredits[id] ? { author: presetCredits[id].author } : {}),
+    })),
     examples: [
       {
         tool: "patch_pack",

@@ -15,7 +15,6 @@ import {
   colorKeys,
   colorLabels,
   describePackChanges,
-  presets,
   themeSchema,
   type ColorKey,
   type PackUi,
@@ -23,6 +22,7 @@ import {
   type StudioDocument,
   type StudioTheme,
 } from "../shared/theme";
+import { presetCredits, presets } from "../shared/presets";
 import { contrastReport } from "../shared/contrast";
 import { PaseoPreview, type PreviewScene, type PreviewTimelineItem } from "./preview";
 import { PaseoMobilePreview } from "./preview-mobile";
@@ -79,6 +79,7 @@ function ThemeTile({
   onDelete,
   favorite = false,
   onFavorite,
+  credit,
 }: {
   theme: PluginTheme;
   candidate: StudioTheme;
@@ -88,6 +89,8 @@ function ThemeTile({
   onDelete?: () => void;
   favorite?: boolean;
   onFavorite?: () => void;
+  /** Author of a community palette, shown in place of the pack's UI summary. */
+  credit?: string;
 }) {
   return (
     <View
@@ -138,7 +141,8 @@ function ThemeTile({
           ))}
         </View>
         <StudioLabel theme={theme} subdued>
-          {candidate.appearance === "dark" ? "Dark" : "Light"} · {candidate.ui.density} · {candidate.ui.fontFamily}
+          {candidate.appearance === "dark" ? "Dark" : "Light"} ·{" "}
+          {credit ? `by ${credit}` : `${candidate.ui.density} · ${candidate.ui.fontFamily}`}
         </StudioLabel>
       </Pressable>
       {onFavorite ? (
@@ -235,6 +239,7 @@ export function ThemeStudio(props: StudioProps) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [dialog, setDialog] = useState<Dialog>(null);
   const [saveName, setSaveName] = useState("");
+  const [presetFilter, setPresetFilter] = useState<"all" | "dark" | "light">("all");
   const [json, setJson] = useState("");
   const [exportRevision, setExportRevision] = useState(0);
   const [copiedInstall, setCopiedInstall] = useState(false);
@@ -820,19 +825,34 @@ export function ThemeStudio(props: StudioProps) {
           <StudioCard
             theme={theme}
             title="Starting packs"
-            description="Load a preset into the draft. Locked colors stay."
+            description="Load a preset into the draft. Locked colors stay. Community palettes come from T3 Themes and credit their authors."
           >
-            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-              {presets.map(candidate => (
-                <ThemeTile
-                  key={candidate.id}
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {(["all", "dark", "light"] as const).map(option => (
+                <StudioButton
+                  key={option}
                   theme={theme}
-                  candidate={candidate}
-                  selected={document.current.id === candidate.id}
-                  disabled={busy}
-                  onPress={() => dispatch({ type: "preset", id: candidate.id })}
+                  title={option === "all" ? `All ${presets.length}` : option === "dark" ? "Dark" : "Light"}
+                  small
+                  active={presetFilter === option}
+                  onPress={() => setPresetFilter(option)}
                 />
               ))}
+            </View>
+            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+              {presets
+                .filter(candidate => presetFilter === "all" || candidate.appearance === presetFilter)
+                .map(candidate => (
+                  <ThemeTile
+                    key={candidate.id}
+                    theme={theme}
+                    candidate={candidate}
+                    selected={document.current.id === candidate.id}
+                    disabled={busy}
+                    onPress={() => dispatch({ type: "preset", id: candidate.id })}
+                    credit={presetCredits[candidate.id]?.author}
+                  />
+                ))}
             </View>
           </StudioCard>
           <StudioCard theme={theme} title="Your library" description="Saved packs live on this Paseo host.">

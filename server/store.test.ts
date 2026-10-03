@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { forestTheme, presets } from "../shared/theme";
+import { forestTheme } from "../shared/theme";
+import { presets } from "../shared/presets";
 import { RevisionConflict, StudioStore } from "./store";
 
 async function fixture(t: { after(callback: () => Promise<void>): void }) {
@@ -327,4 +328,18 @@ test("existing pack documents default favorites to empty without changing palett
   assert.deepEqual(restored, { ...legacy, favorites: [] });
   assert.equal(restored.revision, document.revision);
   assert.deepEqual(JSON.parse(await readFile(store.file, "utf8")).favorites, []);
+});
+
+test("every preset is a valid pack with a unique id, and community palettes carry a credit", async () => {
+  const { themeSchema } = await import("../shared/theme");
+  const { presetCredits } = await import("../shared/presets");
+  const { communityPresets } = await import("../shared/community-presets");
+  assert.equal(new Set(presets.map(theme => theme.id)).size, presets.length);
+  for (const theme of presets) themeSchema.parse(theme);
+  assert.ok(communityPresets.length > 40);
+  for (const preset of communityPresets) {
+    assert.match(preset.id, /^t3-/);
+    assert.equal(presetCredits[preset.id].author, preset.author);
+    assert.ok(preset.author.length > 0);
+  }
 });
