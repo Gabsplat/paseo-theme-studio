@@ -25,6 +25,7 @@
     "client/",
     "server/",
     "shared/",
+    "scripts/prepare-dependencies.mjs",
     "images/",
     "README.md",
     "LICENSE",
