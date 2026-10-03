@@ -38,6 +38,10 @@ Presets, named library copies, and JSON import/export retain the pack's palette 
 
 Loading a saved pack reuses it as a draft and preserves locked colors. Review it, make any changes, and press **Activate** when ready. Loading or favoriting a pack does not activate it. Removing a saved pack also removes its favorite flag.
 
+## On phones
+
+On Paseo mobile, and in narrow windows, Theme Studio opens on a home screen: the pack with its colors, contrast, and Activate, a phone preview, and a list of sections (Colors, Design, Components, Packs, Designer, History). Each section opens full screen with a short preview window at the top, which you can hide. The preview replicates Paseo mobile. On desktop, **Desktop / Mobile** under the preview switches between both replicas.
+
 ## First run and help
 
 The first time Theme Studio opens on a host, a short visual tour explains the workspace, the draft and activation flow, the designer and its MCP tools, components, and good prompts. Skip it or finish it once and it stays closed; the **?** button in the top bar reopens it any time. **History** next to it shows draft history in the inspector.
@@ -46,7 +50,7 @@ The first time Theme Studio opens on a host, a short visual tour explains the wo
 
 **Designer** (or **Start designer** the first time) creates an initially idle agent and opens its real Paseo chat with Theme Studio in the Explorer panel. Drag Paseo's panel divider to enlarge the preview. `/theme` opens the studio panel beside an existing agent.
 
-Theme Studio remembers whether you left the designer open. While it is open, choosing **Theme Studio** in the sidebar returns to the designer chat with the studio beside it. **Close designer** in that panel goes back to the full studio and keeps it there next time. The preference is stored in `preferences.json`, separately from your packs.
+Theme Studio remembers whether you left the designer open. On desktop, the first time you open Theme Studio in an app session it returns to the designer chat with the studio beside it; later visits stay in the studio. Phones never redirect, because the chat fills the screen. **Close designer** in the studio panel, or **Studio** in the designer chat's header, goes back to the full studio and keeps it there next time. The preference is stored in `preferences.json`, separately from your packs.
 
 The **Designer** inspector tab shows the current session's provider, model, reasoning level, and status. A session keeps its model for its whole life. To use another one, choose a provider (Codex, Claude Code, or OpenCode) and optionally a model, then press **Start new session**: Theme Studio creates a new designer in the same workspace and opens it, and the previous chat stays there. Your choice is saved in `preferences.json` for the next session. Without a choice, the designer uses Codex `gpt-6.1-sol` with high reasoning. Creating a designer sends no prompt.
 

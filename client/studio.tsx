@@ -8,7 +8,7 @@ import { useRpc } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { copyText, Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { changeStudio, exportPack, readStudio, startDesigner } from "../shared/rpc";
 import {
@@ -25,6 +25,7 @@ import {
 } from "../shared/theme";
 import { contrastReport } from "../shared/contrast";
 import { PaseoPreview, type PreviewScene, type PreviewTimelineItem } from "./preview";
+import { PaseoMobilePreview } from "./preview-mobile";
 import { PaletteInspector } from "./studio-inspector";
 import { PackDesignInspector } from "./studio-design";
 import { previewPluginTheme } from "./preview-colors";
@@ -62,6 +63,8 @@ const studioQueryKey = ["theme-studio-document"] as const;
 const preferencesQueryKey = ["theme-studio-preferences"] as const;
 // Remembers each host and workspace's view while Paseo keeps this plugin loaded.
 const studioViews = new Map<string, StudioView>();
+// Module state lives for the app session, so returning to Theme Studio shows the studio.
+let designerRestored = false;
 
 function messageFor(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -218,6 +221,11 @@ export function ThemeStudio(props: StudioProps) {
   const setScene = (next: PreviewScene) => (remember({ scene: next }), setSceneState(next));
   const setFilterFavorites = (next: boolean) => (remember({ filterFavorites: next }), setFilterFavoritesState(next));
   const [componentState, setComponentState] = useState<ComponentState>({});
+  // Desktop can preview the pack on Paseo mobile; phones always do.
+  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  // Phones navigate from a home screen into one section at a time.
+  const [mobileSection, setMobileSection] = useState<Inspector | null>(null);
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
   function selectComponent(id: string | null) {
     remember({ component: id });
     setSelectedComponentState(id);
@@ -233,6 +241,8 @@ export function ThemeStudio(props: StudioProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Beside a chat, or on small screens, the inspector moves below the preview.
+  // Phones and narrow windows get the mobile layout and preview.
+  const mobile = layout.platform !== "web" || layout.compact;
   const stacked = layout.compact || (size.width > 0 && size.width < 980);
   // Explorer panels beside a chat can be very narrow; keep toolbar labels for the key action only.
   const tight = layout.compact || (size.width > 0 && size.width < 520);
@@ -299,11 +309,12 @@ export function ThemeStudio(props: StudioProps) {
   });
 
   // Theme Studio reopens the designer chat if the user left it open last time.
-  const restored = useRef(false);
+  // On desktop, Theme Studio reopens the designer once per app session if the user left it open.
+  // Phones show the chat full screen, without the studio beside it, so they never redirect.
   useEffect(() => {
-    if (restored.current || !props.autoOpenDesigner || inPanel || !props.navigation) return;
+    if (designerRestored || !props.autoOpenDesigner || inPanel || !props.navigation || mobile) return;
     if (!preferences.data || !document) return;
-    restored.current = true;
+    designerRestored = true;
     if (preferences.data.designerOpen && document.designerAgentId) openDesigner();
   }, [preferences.data, document?.designerAgentId]);
 
@@ -682,14 +693,29 @@ export function ThemeStudio(props: StudioProps) {
 
   const canvas = document ? (
     <View style={{ flex: 1, minWidth: 0, minHeight: 0, padding: stacked ? 10 : 16, gap: 10 }}>
-      <PaseoPreview
-        theme={document.current}
-        compact={layout.compact}
-        scene={scene}
-        onSceneChange={setScene}
-        items={previewItems}
-      />
+      {device === "mobile" ? (
+        <View style={{ flex: 1, minHeight: 0, width: "100%", maxWidth: 400, alignSelf: "center" }}>
+          <PaseoMobilePreview theme={document.current} items={previewItems} />
+        </View>
+      ) : (
+        <PaseoPreview
+          theme={document.current}
+          compact={layout.compact}
+          scene={scene}
+          onSceneChange={setScene}
+          items={previewItems}
+        />
+      )}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <StudioSegments
+          theme={theme}
+          value={device}
+          onChange={setDevice}
+          options={[
+            { value: "desktop", label: "Desktop", icon: "Monitor" },
+            { value: "mobile", label: "Mobile", icon: "Smartphone" },
+          ]}
+        />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Edit colors"
@@ -975,15 +1001,272 @@ export function ThemeStudio(props: StudioProps) {
     </View>
   );
 
+  const sectionTitles: Record<Inspector, string> = {
+    colors: "Colors",
+    design: "Design",
+    components: "Components",
+    packs: "Packs",
+    designer: "Designer",
+    history: "History",
+  };
+  function openSection(section: Inspector) {
+    setInspector(section);
+    setMobileSection(section);
+  }
+  const libraryCount = latestDefinitions(components.library).length;
+  const mobileRows: { section: Inspector; icon: string; subtitle: string }[] = document
+    ? [
+        {
+          section: "colors",
+          icon: "SwatchBook",
+          subtitle: `${colorKeys.length} colors${document.locks.length ? ` · ${document.locks.length} locked` : ""}`,
+        },
+        {
+          section: "design",
+          icon: "LayoutTemplate",
+          subtitle: `${document.current.ui.density} · ${document.current.ui.fontFamily} ${document.current.ui.fontSize}px`,
+        },
+        ...(componentsEnabled
+          ? [
+              {
+                section: "components" as const,
+                icon: "Blocks",
+                subtitle: `${libraryCount} ${libraryCount === 1 ? "component" : "components"}`,
+              },
+            ]
+          : []),
+        {
+          section: "packs",
+          icon: "Package",
+          subtitle: `${document.saved.length} saved · ${document.active ? `active: ${document.active.name}` : "none active"}`,
+        },
+        {
+          section: "designer",
+          icon: "MessageSquare",
+          subtitle: document.designerAgentId ? "Chat, model, and sessions" : "Start your designer",
+        },
+        { section: "history", icon: "History", subtitle: `${document.history.length} draft edits` },
+      ]
+    : [];
+  const mobileHeader = (title: string, onBack: () => void, right?: ReactNode) => (
+    <View
+      style={{
+        height: 48,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 8,
+        borderBottomWidth: 1,
+        borderColor: c.border,
+      }}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+        onPress={onBack}
+        hitSlop={8}
+        style={{ flexDirection: "row", alignItems: "center", padding: 6 }}
+      >
+        <Icon name="ChevronLeft" size={20} color={c.foreground} />
+      </Pressable>
+      <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 16, fontWeight: "600" }}>
+        {title}
+      </Text>
+      {right}
+    </View>
+  );
+  const mobileView = !document ? (
+    canvas
+  ) : libraryVisible ? (
+    <>
+      {mobileHeader("Component library", () => setView("studio"))}
+      <ComponentLibrarySurface {...props} />
+    </>
+  ) : mobileSection ? (
+    <>
+      {mobileHeader(
+        sectionTitles[mobileSection],
+        () => setMobileSection(null),
+        <StudioButton
+          theme={theme}
+          title={previewCollapsed ? "Show preview" : "Hide preview"}
+          icon={previewCollapsed ? "Eye" : "EyeOff"}
+          small
+          iconOnly
+          onPress={() => setPreviewCollapsed(!previewCollapsed)}
+        />,
+      )}
+      {!previewCollapsed ? (
+        // A window onto the phone preview keeps edits visible while you work.
+        <View style={{ height: Math.max(220, Math.round(size.height * 0.34)), padding: 10, paddingBottom: 0 }}>
+          <PaseoMobilePreview theme={document.current} items={previewItems} compact />
+        </View>
+      ) : null}
+      <ScrollView
+        style={{ flex: 1 }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+      >
+        {inspectorBody}
+      </ScrollView>
+    </>
+  ) : (
+    <>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}>
+        <View style={{ padding: 16, gap: 14, borderRadius: 14, backgroundColor: c.surface1 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 19, fontWeight: "600" }}>
+              {document.current.name}
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 4,
+                  backgroundColor: draftMatchesActive ? c.statusSuccess : c.statusWarning,
+                }}
+              />
+              <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                {draftMatchesActive ? "Active" : "Not active yet"}
+              </Text>
+            </View>
+            <StudioButton
+              theme={theme}
+              title="Help and tour"
+              icon="CircleHelp"
+              small
+              iconOnly
+              onPress={() => setTourOpen(true)}
+            />
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Edit colors"
+            onPress={() => openSection("colors")}
+            style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+          >
+            {colorKeys.map(key => (
+              <View
+                key={key}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: c.border,
+                  backgroundColor: document.current.colors[key],
+                }}
+              />
+            ))}
+            <View style={{ flex: 1 }} />
+            <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Text {textRatio}:1</Text>
+          </Pressable>
+          {packChanges.length && document.active ? (
+            <StudioLabel theme={theme} subdued>
+              Activating updates {packChanges.join(", ").toLowerCase()}.
+            </StudioLabel>
+          ) : null}
+          <StudioButton
+            theme={theme}
+            title={draftMatchesActive ? "Active" : "Activate"}
+            icon="Check"
+            primary
+            disabled={busy || draftMatchesActive}
+            onPress={() => void activatePack()}
+          />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {[
+              {
+                title: "Undo",
+                icon: "Undo2",
+                disabled: busy || document.cursor === 0,
+                onPress: () => dispatch({ type: "undo" }),
+              },
+              {
+                title: "Redo",
+                icon: "Redo2",
+                disabled: busy || document.cursor >= document.history.length - 1,
+                onPress: () => dispatch({ type: "redo" }),
+              },
+              {
+                title: document.current.appearance === "light" ? "Switch to dark" : "Switch to light",
+                icon: document.current.appearance === "light" ? "Sun" : "Moon",
+                disabled: busy,
+                onPress: () =>
+                  dispatch({
+                    type: "patch",
+                    colors: {},
+                    appearance: document.current.appearance === "dark" ? "light" : "dark",
+                    label: "Change appearance",
+                  }),
+              },
+              { title: "Save pack", icon: "Save", disabled: busy, onPress: () => openDialog("save") },
+            ].map(action => (
+              <View key={action.title} style={{ flex: 1 }}>
+                <StudioButton theme={theme} small iconOnly {...action} />
+              </View>
+            ))}
+          </View>
+        </View>
+        <View style={{ height: Math.max(420, Math.round(size.height * 0.62)) }}>
+          <PaseoMobilePreview theme={document.current} items={previewItems} />
+        </View>
+        <View style={{ borderRadius: 14, backgroundColor: c.surface1, overflow: "hidden" }}>
+          {mobileRows.map((row, index) => (
+            <Pressable
+              key={row.section}
+              accessibilityRole="button"
+              accessibilityLabel={sectionTitles[row.section]}
+              onPress={() => openSection(row.section)}
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                borderTopWidth: index ? 1 : 0,
+                borderColor: c.border,
+                backgroundColor: pressed ? c.surface2 : "transparent",
+              })}
+            >
+              <View
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: c.surface2,
+                }}
+              >
+                <Icon name={row.icon} size={16} color={c.foreground} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ color: c.foreground, fontSize: 15 }}>{sectionTitles[row.section]}</Text>
+                <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                  {row.subtitle}
+                </Text>
+              </View>
+              <Icon name="ChevronRight" size={16} color={c.foregroundMuted} />
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+    </>
+  );
+
   return (
     <View
       testID="theme-studio"
       onLayout={event => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
       style={{ flex: 1, minHeight: 0, backgroundColor: c.surface0 }}
     >
-      {topBar}
+      {mobile ? null : topBar}
       {banner}
-      {libraryVisible ? (
+      {mobile ? (
+        mobileView
+      ) : libraryVisible ? (
         <ComponentLibrarySurface {...props} />
       ) : stacked ? (
         <View style={{ flex: 1, minHeight: 0 }}>

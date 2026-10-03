@@ -760,7 +760,7 @@ export function PaseoPreview({
   );
 }
 
-function PreviewActivity({ pack }: { pack: StudioTheme }) {
+export function PreviewActivity({ pack }: { pack: StudioTheme }) {
   const theme = previewPluginTheme(pack);
   const c = theme.colors;
   const m = packMetrics(pack.ui);
