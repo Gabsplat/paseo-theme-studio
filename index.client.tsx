@@ -6,6 +6,7 @@ import { PackActivity, registerPackExtensions } from "./client/pack-runtime";
 import { readActiveTheme, readStudio } from "./shared/rpc";
 import type { StudioTheme } from "./shared/theme";
 import { registerComponents } from "./client/component-runtime";
+import { changeStudioPreferences } from "./shared/preferences";
 
 export default function contribute(client: PluginClientContext) {
   let disposed = false;
@@ -99,14 +100,45 @@ export default function contribute(client: PluginClientContext) {
       for (const listener of listeners) listener();
     }
   }
+  // The designer chat gets a header button back to the studio. On phones the chat
+  // fills the screen, so this is the way out of it.
+  let studioButton: { workspaceId: string; remove(): void } | null = null;
+  function showStudioButton(workspaceId: string | null) {
+    if (disposed || studioButton?.workspaceId === workspaceId) return;
+    studioButton?.remove();
+    studioButton = null;
+    if (!workspaceId) return;
+    const registration = client.addHeaderButton({
+      id: "back-to-studio",
+      workspaceId,
+      button: {
+        title: "Back to Theme Studio",
+        icon: "Palette",
+        label: "Studio",
+        behavior: {
+          kind: "action",
+          onPress: () => {
+            // Leaving the designer on purpose: do not reopen it next time.
+            void client
+              .rpc(changeStudioPreferences, { designerOpen: false })
+              .catch(() => {})
+              .finally(() => client.openSurface("studio"));
+          },
+        },
+      },
+    });
+    studioButton = { workspaceId, remove: () => registration.remove() };
+  }
   const removeExtensions = registerPackExtensions(client, () => activePack, subscribe);
   const removeComponents = registerComponents(client);
   async function refresh() {
     if (disposed || busy) return;
     busy = true;
     try {
-      applyActive((await client.rpc(readStudio, {})).active);
+      const document = await client.rpc(readStudio, {});
+      applyActive(document.active);
       documentApplied = true;
+      showStudioButton(document.designerWorkspaceId);
     } catch {
       /* The studio reports connection failures; retain the last active design. */
     } finally {
@@ -209,6 +241,7 @@ export default function contribute(client: PluginClientContext) {
   return async () => {
     disposed = true;
     clearInterval(timer);
+    studioButton?.remove();
     await removeComponents();
     await removeExtensions();
     await removePanelCommand?.();
