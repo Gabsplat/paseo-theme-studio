@@ -26,8 +26,10 @@ Design how [Paseo](https://paseo.sh) looks without leaving Paseo. Theme Studio i
 Requires Paseo `>=0.9.2 <0.11.0` with plugins enabled, and Node.js on the daemon host.
 
 ```sh
-paseo plugin install https://github.com/Gabsplat/paseo-theme-studio.git
+paseo plugin install paseo-theme-studio
 ```
+
+That installs the [npm package](https://www.npmjs.com/package/paseo-theme-studio). To follow the repository instead, use `paseo plugin install https://github.com/Gabsplat/paseo-theme-studio.git`.
 
 Then open **Theme Studio** in the sidebar and choose **Theme Studio · Live** once in **Settings → Appearance**, so the active pack's palette applies across Paseo.
 
