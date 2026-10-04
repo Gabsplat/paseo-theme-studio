@@ -30,7 +30,7 @@ test("export produces a typechecked standalone pack without agent state or tooli
     assert.equal(result.validation.typecheck, true);
     const manifest = JSON.parse(await readFile(join(result.directory, "paseo-plugin.json"), "utf8"));
     assert.equal(manifest.id, "theme-pack-editor-s-pack");
-    assert.equal(manifest.requirements.paseo, ">=0.9.2 <0.11.0");
+    assert.equal(manifest.requirements.paseo, ">=0.9.2 <0.11.0 || >=0.11.0-beta.1 <0.12.0");
     const pack = JSON.parse(await readFile(join(result.directory, "pack.json"), "utf8"));
     assert.deepEqual(pack, draft.current);
     assert.equal("designerAgentId" in pack, false);

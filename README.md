@@ -23,7 +23,7 @@ Design how [Paseo](https://paseo.sh) looks without leaving Paseo. Theme Studio i
 
 ## Install
 
-Requires Paseo `>=0.9.2 <0.11.0` with plugins enabled, and Node.js on the daemon host.
+Requires Paseo 0.9.2 through 0.11.x, including the 0.11 betas, with plugins enabled, and Node.js on the daemon host.
 
 ```sh
 paseo plugin install paseo-theme-studio
