@@ -47,8 +47,8 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
- * Finds the `node_modules` that holds this plugin's TypeScript. A development checkout has
- * its own; an npm installation shares the one its package was installed into.
+ * Finds the `node_modules` that holds this plugin's TypeScript. Only a development checkout
+ * has one: Paseo installs published plugins without development dependencies.
  */
 export async function findModules(projectDirectory: string): Promise<string> {
   for (let directory = projectDirectory; ; directory = dirname(directory)) {
@@ -56,7 +56,7 @@ export async function findModules(projectDirectory: string): Promise<string> {
     if (await exists(join(modules, "typescript", "package.json"))) return modules;
     if (dirname(directory) === directory)
       throw new Error(
-        "TypeScript is not installed next to Theme Studio. Install the plugin from npm, or run `pnpm install` in its directory.",
+        "Code components and pack export need Theme Studio's development dependencies, which this installation does not include. Clone the repository, run `pnpm install`, and install the plugin from that directory.",
       );
   }
 }

@@ -126,18 +126,19 @@ const restrictedNativeImports = new Set([
  */
 export function validateComponentCode(code: string, modules: string): void {
   if (!code.trim() || code.length > 40000) throw new Error("Component source must contain 1–40,000 characters.");
-  const ts = createRequire(join(modules, "typescript/package.json"))(
+  // Untyped on purpose: Paseo resolves every type import when it compiles the plugin, and
+  // TypeScript is a development dependency that a published installation does not have.
+  const ts: any = createRequire(join(modules, "typescript/package.json"))(
     join(modules, "typescript/lib/typescript.js"),
-  ) as typeof import("typescript");
+  );
   const file = ts.createSourceFile("component.tsx", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const diagnostics =
-    (file as typeof file & { parseDiagnostics?: import("typescript").Diagnostic[] }).parseDiagnostics ?? [];
+  const diagnostics = file.parseDiagnostics ?? [];
   if (diagnostics.length)
     throw new Error(
       "Component TSX could not be parsed: " + ts.flattenDiagnosticMessageText(diagnostics[0].messageText, " "),
     );
   let hasDefault = false;
-  function visit(node: import("typescript").Node) {
+  function visit(node: any) {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const module = node.moduleSpecifier;
       if (module && ts.isStringLiteral(module)) {
@@ -171,7 +172,7 @@ export function validateComponentCode(code: string, modules: string): void {
     if (ts.isExportAssignment(node) && !node.isExportEquals) hasDefault = true;
     if (
       ts.canHaveModifiers(node) &&
-      ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword)
+      ts.getModifiers(node)?.some((modifier: { kind: number }) => modifier.kind === ts.SyntaxKind.DefaultKeyword)
     )
       hasDefault = true;
     if (

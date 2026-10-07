@@ -20,5 +20,5 @@ test("an npm installation finds shared modules and explains the missing type too
 test("a directory without TypeScript reports how to install it", async t => {
   const root = await mkdtemp(join(tmpdir(), "theme-studio-install-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await assert.rejects(findModules(root), /TypeScript is not installed/);
+  await assert.rejects(findModules(root), /development dependencies/);
 });

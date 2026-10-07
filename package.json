@@ -1,6 +1,6 @@
 {
   "name": "paseo-theme-studio",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Design Paseo themes and UI packs with a live preview, 60 starting palettes, and a companion designer agent.",
   "license": "Apache-2.0",
   "author": "Gabsplat",
@@ -25,8 +25,9 @@
     "client/",
     "server/",
     "shared/",
-    "scripts/prepare-dependencies.mjs",
     "images/",
+    "OVERVIEW.md",
+    "paseo-listing.json",
     "README.md",
     "LICENSE",
     "NOTICE",
@@ -44,9 +45,6 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json}\"",
     "prepublishOnly": "node scripts/ensure-generated-registry.mjs --check && pnpm typecheck && pnpm test"
   },
-  "dependencies": {
-    "typescript": "^5.9.3"
-  },
   "devDependencies": {
     "@getpaseo/plugin": "0.9.2",
     "@tanstack/react-query": "^5.90.11",
@@ -58,6 +56,7 @@
     "react": "19.1.0",
     "react-native": "0.81.5",
     "tsx": "^4.20.0",
+    "typescript": "^5.9.3",
     "zod": "^4.4.3"
   },
   "packageManager": "pnpm@12.5.1"
