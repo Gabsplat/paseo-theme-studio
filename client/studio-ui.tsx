@@ -200,3 +200,111 @@ export function StudioSegments<T extends string>({
     </View>
   );
 }
+
+export const monoFont = "monospace";
+
+/** Machine metadata: section names, counts, ids. Mono, uppercase, quiet. */
+export function Eyebrow({ theme, children, color }: { theme: PluginTheme; children: ReactNode; color?: string }) {
+  return (
+    <Text
+      numberOfLines={1}
+      style={{
+        color: color ?? theme.colors.foregroundMuted,
+        fontSize: 10.5,
+        lineHeight: 14,
+        letterSpacing: 0.6,
+        fontFamily: monoFont,
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+/** A small selectable or removable tag. */
+export function StudioChip({
+  theme,
+  label,
+  icon,
+  swatch,
+  selected = false,
+  disabled = false,
+  onPress,
+  onRemove,
+}: {
+  theme: PluginTheme;
+  label: string;
+  icon?: string;
+  /** A color dot shown before the label. */
+  swatch?: string;
+  selected?: boolean;
+  disabled?: boolean;
+  onPress?: () => void;
+  onRemove?: () => void;
+}) {
+  const c = theme.colors;
+  const body = (
+    <>
+      {swatch ? (
+        <View
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            backgroundColor: swatch,
+            borderWidth: 1,
+            borderColor: c.border,
+          }}
+        />
+      ) : null}
+      {icon ? <Icon name={icon} size={12} color={selected ? c.accent : c.foregroundMuted} /> : null}
+      <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 12, fontWeight: selected ? "600" : "400" }}>
+        {label}
+      </Text>
+    </>
+  );
+  const style = {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+    height: 26,
+    paddingHorizontal: 9,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: selected ? c.accent : c.border,
+    backgroundColor: selected ? c.surface2 : "transparent",
+    opacity: disabled ? 0.45 : 1,
+    maxWidth: "100%" as const,
+  };
+  return (
+    <View style={style}>
+      {onPress ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={{ selected, disabled }}
+          disabled={disabled}
+          onPress={onPress}
+          hitSlop={6}
+          style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}
+        >
+          {body}
+        </Pressable>
+      ) : (
+        body
+      )}
+      {onRemove ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${label}`} onPress={onRemove} hitSlop={6}>
+          <Icon name="X" size={12} color={c.foregroundMuted} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}

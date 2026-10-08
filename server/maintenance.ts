@@ -8,15 +8,11 @@ import type { ComponentService } from "./components";
  */
 export async function pruneMissingAgents(
   controller: Pick<ComponentController, "agentPresence">,
-  service: Pick<ComponentService, "read" | "removeAgentInstances">,
+  service: Pick<ComponentService, "instanceAgents" | "removeAgentInstances">,
   owners: Pick<AgentOwners, "list" | "remove">,
 ): Promise<{ instances: number; bindings: number }> {
   const bindings = await owners.list();
-  const library = await service.read();
-  const agentIds = new Set([
-    ...bindings.map(binding => binding.agentId),
-    ...library.instances.map(item => item.agentId),
-  ]);
+  const agentIds = new Set([...bindings.map(binding => binding.agentId), ...(await service.instanceAgents())]);
   const missing: string[] = [];
   for (const agentId of agentIds) if ((await controller.agentPresence(agentId)) === "missing") missing.push(agentId);
   const instances = await service.removeAgentInstances(missing);

@@ -13,10 +13,12 @@ import {
   type ComponentState,
   type ComponentTimelineData,
 } from "../shared/components";
-import { interactComponent, readComponentInstance, readComponentLibrary } from "../shared/component-rpc";
+import { interactComponent, readComponentInstance, readComponentEvents } from "../shared/component-rpc";
 import { generatedComponents } from "./generated-components";
 import { componentEvents, componentHasAgentUpdate } from "./component-events";
 import { ErrorBoundary } from "./error-boundary";
+import { LiveRow } from "./live-row";
+import { liveTimelineSchema } from "../shared/live";
 
 export function CompositionRenderer({ tree, theme, state, onAction }: ComponentProps & { tree: ComponentNode }) {
   const c = theme.colors;
@@ -161,7 +163,11 @@ export function CompositionRenderer({ tree, theme, state, onAction }: ComponentP
   return null;
 }
 
-/** The chat card shared by real timeline rows and the studio preview. */
+/**
+ * A component as it appears in a chat and in the studio preview. A custom component
+ * owns its whole look, so nothing is drawn around it: no frame, title, or padding.
+ * Retired block compositions have no styling of their own and keep a plain frame.
+ */
 export function ComponentCard({
   theme,
   definition,
@@ -181,23 +187,28 @@ export function ComponentCard({
   const Code = definition.mode === "code" ? generatedComponents[`${definition.id}@${definition.version}`] : undefined;
   return (
     <View
-      style={{
-        padding: 14,
-        gap: 10,
-        borderWidth: 1,
-        borderColor: c.border,
-        borderRadius: 12,
-        backgroundColor: c.surface1,
-      }}
+      style={
+        definition.mode === "composition"
+          ? {
+              padding: 14,
+              gap: 10,
+              borderWidth: 1,
+              borderColor: c.border,
+              borderRadius: 12,
+              backgroundColor: c.surface1,
+            }
+          : { gap: 6 }
+      }
     >
-      <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>{definition.name}</Text>
       <ComponentBoundary key={`${definition.id}@${definition.version}`} theme={theme}>
         {definition.mode === "composition" ? (
           <CompositionRenderer tree={definition.tree} theme={theme} state={state} onAction={onAction} />
         ) : Code ? (
           <Code theme={theme} state={state} onAction={onAction} />
         ) : (
-          <Text style={{ color: c.foregroundMuted }}>Activate this component's validated build from Components.</Text>
+          <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+            {definition.name} is waiting for you to activate its build in Theme Studio.
+          </Text>
         )}
       </ComponentBoundary>
       {feedback ? (
@@ -393,6 +404,12 @@ export function registerComponents(client: PluginClientContext) {
     schema: componentTimelineSchema,
     Component: Renderer,
   });
+  const removeLiveRenderer = client.addTimelineRenderer({
+    kind: "studio-live",
+    version: 1,
+    schema: liveTimelineSchema,
+    Component: LiveRow,
+  });
   const addTransformer = () =>
     client.addTimelineTransformer({
       id: "verified-component-events",
@@ -416,8 +433,8 @@ export function registerComponents(client: PluginClientContext) {
     if (disposed || busy) return;
     busy = true;
     try {
-      const library = await client.rpc(readComponentLibrary, {});
-      if (!disposed) componentEvents.updateLibrary(library);
+      const { instances } = await client.rpc(readComponentEvents, {});
+      if (!disposed) componentEvents.updateLibrary({ instances });
     } catch {
       /* Keep the last verified snapshot when offline. */
     } finally {
@@ -435,5 +452,6 @@ export function registerComponents(client: PluginClientContext) {
     await pending;
     await removeTransformer();
     await removeRenderer();
+    await removeLiveRenderer();
   };
 }

@@ -44,7 +44,7 @@ paseo plugin install "$PWD"
 
 ## Quick start
 
-1. Open **Packs** and load a starting palette, or begin from the current draft.
+1. In **Create**, type an idea: a quick model you choose finishes it and paints three looks you can apply with a tap. Send the brief to the designer for full takes, or mix parts of existing packs into the draft. Or open **Packs** and load a starting palette.
 2. In **Colors**, adjust the eight colors. Lock the ones you want to keep; presets, undo, and the designer leave locked colors alone. The contrast summary flags unreadable pairs.
 3. In **Design**, pick density, radius, fonts, tool-card style, and workspace panels.
 4. Press **Activate**. The status next to the pack name shows whether the draft is live.
@@ -60,12 +60,13 @@ The designer changes the draft only. It cannot activate a pack, unlock a color, 
 
 ![A generated component rendered in the preview chat](images/component.png)
 
-The **Components** inspector holds reusable UI that agents can place in their timeline:
+The **Cards** inspector holds reusable UI that agents can place in their timeline:
 
-- **Compositions** are validated trees of native blocks: text, stats, lists, progress, buttons, inputs, selects, and toggles. They work as soon as they are saved.
-- **Code components** are React Native source that an agent or you write. They run only after you read the source and activate the build.
+Every component is custom: React Native source that an agent designs for the job, or that you paste yourself. There are no pre-made blocks to assemble. A component appears in the chat exactly as designed, with no frame or title drawn around it, and it runs only after you read its source and activate the build.
 
 A component can declare trigger rules such as "after a command fails, show this card", and connected agents publish it on their own when the rule matches. Pressing a button sends the event to the agent that owns the card, and the agent writes the result back into it. Connecting your other agents is opt-in, under **Components → Connect your agents**.
+
+Agents can also show a **live frame**: interactive HTML they write on the spot, such as a chart or a calculator, that appears in the chat at once with no build or activation. It runs on Paseo web and desktop in a sandboxed frame with no network and follows the active theme. See [docs/reference.md](docs/reference.md#live-frames).
 
 ## Export a pack as its own plugin
 

@@ -10,6 +10,7 @@ import {
 } from "../shared/component-rpc";
 import { componentIdSchema, componentNodeSchema } from "../shared/components";
 import { componentTriggerInstructions } from "../shared/component-trigger-policy";
+import { liveInputSchema } from "../shared/live";
 
 export const revisionSchema = z.object({ expectedRevision: z.number().int().nonnegative() }).strict();
 const componentToolNames = [
@@ -17,12 +18,12 @@ const componentToolNames = [
   "list_component_triggers",
   "trigger_component",
   "read_component_instance",
-  "create_composition",
   "create_code_component",
   "build_components",
   "publish_component",
   "update_component_state",
   "favorite_component",
+  "show_live",
 ] as const;
 export const patchSchema = z
   .object({
@@ -133,18 +134,13 @@ export const toolDefinitions = [
   ),
   tool(
     "list_components",
-    "Read the reusable composition/code component library, LIBRARY revision, versions, instances, and activated code keys.",
+    "Read the custom component library, LIBRARY revision, versions, activated code keys, your own most recent instances, and per-component instance totals.",
     emptySchema,
   ),
   tool(
     "read_component_instance",
     "Read an instance and definition before handling an interaction. Its revision is an INSTANCE revision.",
     z.object({ instanceId: z.string() }).strict(),
-  ),
-  tool(
-    "create_composition",
-    "Save a versioned native component composed from a validated tree. Requires LIBRARY revision. Optional triggers store component-specific conditions and check moments; omit to inherit previous version rules or use [] for manual-only. Can publish immediately without activation.",
-    componentCreateSchema,
   ),
   tool(
     "create_code_component",
@@ -158,7 +154,7 @@ export const toolDefinitions = [
   ),
   tool(
     "publish_component",
-    "Add an interactive component row to the native chat. Composition needs no activation; generated code must be manually activated first. Requires LIBRARY revision. agentId defaults to this connected agent when a verified session owner is available. Otherwise specify the target agentId explicitly; do not guess or publish in an unrelated designer chat.",
+    "Add an interactive component row to the native chat. The component must be custom code whose build the user activated. Requires LIBRARY revision. agentId defaults to this connected agent when a verified session owner is available. Otherwise specify the target agentId explicitly; do not guess or publish in an unrelated designer chat.",
     componentPublishSchema,
   ),
   tool(
@@ -167,13 +163,18 @@ export const toolDefinitions = [
     componentUpdateSchema,
   ),
   tool(
+    "show_live",
+    "Show a live, interactive piece of HTML in this chat right now: no library entry, build, or activation. Use it whenever something visual or interactive explains better than text: charts, comparisons, timelines, simulators, calculators, small editors or tools, color or layout explorations. It runs on Paseo web and desktop in a sandboxed frame with no network (no fetch, no remote scripts, images, or fonts; inline everything, data: URLs only). The frame already has the active theme as CSS variables (--surface0/1/2, --foreground, --foreground-muted, --border, --accent, --accent-foreground, --status-success/warning/danger, --ring, --radius, --font, --font-size), a base stylesheet that styles plain HTML (button, button.primary, input, select, range sliders, table, .tabs, .card, .row, .stack, .grid, .stat, .badge, .muted, .eyebrow), Preact with htm (globals html, render, useState, useEffect, useMemo, useRef), and a `live` object: live.state, live.setState(patch) to persist, live.action(name, value?, patch?) to send you an event, live.on('state'|'theme', fn), live.useLive() hook returning [state, setState], live.chart.bar(target, [{label,value}], opts) and live.chart.line(...). The frame sizes itself to its content up to 720 px. Write a body fragment, not a full page. Actions reach you as widget events; answer with update_component_state on the returned instanceId. Provide summary for phones, which cannot run frames. HTML is limited to 120,000 characters.",
+    liveInputSchema,
+  ),
+  tool(
     "favorite_component",
     "Star or unstar a reusable component definition. Requires LIBRARY revision.",
     revisionSchema.extend({ componentId: componentIdSchema, favorite: z.boolean() }),
   ),
 ];
 export const packInstructions =
-  "Theme Studio supports UI packs, favorites, reusable compositions, and on-demand React Native code components. Before answering what you can create, call read_theme and use its current capabilities rather than outdated conversation claims. You CAN create real interactive rows INSIDE the native chat: buttons, text inputs, selects, toggles, statistics, lists, and progress bars using create_composition and publish_component. These are not restricted to workspace panels. Sliders and other custom native controls require a generated React Native code component, a successful build, and manual user activation before publication. Compose and generate through the component tools; never claim chat widgets are unsupported. Read read_theme for the draft and full capabilities, then patch_theme or patch_pack for pack edits. Use list_components and component tools for reusable UI and structured interactions. Existing sessions can invoke component tools through patch_theme.component using the compatibility contract returned by read_theme. Studio, library, and instance revisions are separate: read the matching resource before mutation. The user alone activates themes and generated-code builds. Never claim activation before the user does it.";
+  "Theme Studio supports UI packs, favorites, and custom React Native components that you write for the task. Before answering what you can create, call read_theme and use its current capabilities rather than outdated conversation claims. You CAN create real interactive rows INSIDE the native chat. Every component is custom: write it with create_code_component, build it with build_components, and publish it after the user activates the build. There are no pre-made blocks or templates to assemble, and the retired create_composition tool is refused. A component is drawn in the chat exactly as written, with no frame, title, or padding added around it, so design its whole surface yourself: its own background, border, spacing, type, and motion, in the visual language the user asked for. Never claim chat widgets are unsupported. For a quick visual or interactive answer (a chart, comparison, simulator, calculator, or small tool), call show_live with self-contained HTML: it appears in the chat at once on web and desktop, needs no build or activation, and follows the active theme. Read read_theme for the draft and full capabilities, then patch_theme or patch_pack for pack edits. Use list_components and component tools for reusable UI and structured interactions. Existing sessions can invoke component tools through patch_theme.component using the compatibility contract returned by read_theme. Studio, library, and instance revisions are separate: read the matching resource before mutation. The user alone activates themes and generated-code builds. Never claim activation before the user does it.";
 
 export function capabilities() {
   return {

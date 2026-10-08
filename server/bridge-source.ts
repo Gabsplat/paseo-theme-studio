@@ -63,6 +63,7 @@ async function callBackend(name, args, signal) {
 function compactTriggerCatalog(catalog) {
   if (!catalog || typeof catalog !== "object" || typeof catalog.automaticTriggers !== "boolean" || !Array.isArray(catalog.components)) return undefined;
   const compact = { automaticTriggers: catalog.automaticTriggers, components: [], truncated: false };
+  if (catalog.liveFrames && typeof catalog.liveFrames.when === "string") compact.liveFrames = { tool: "show_live", when: catalog.liveFrames.when.slice(0, 700) };
   for (const component of catalog.components) {
     if (!component || typeof component.componentId !== "string" || component.componentId.length > 48 || typeof component.name !== "string" || component.name.length > 60 || !Number.isInteger(component.version) || component.version < 1 || !["composition", "code"].includes(component.mode) || typeof component.available !== "boolean" || !Array.isArray(component.triggers)) continue;
     const triggers = component.triggers.slice(0, 10).filter(trigger => trigger && typeof trigger.id === "string" && trigger.id.length <= 48 && ["agent_context", "turn_started", "turn_completed", "tool_failed"].includes(trigger.event) && typeof trigger.when === "string" && trigger.when.length > 0 && trigger.when.length <= 600 && trigger.enabled === true).map(trigger => ({ id: trigger.id, event: trigger.event, when: trigger.when }));

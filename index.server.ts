@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { dirname } from "node:path";
 import { spawn } from "node:child_process";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import { readStudio, readActiveTheme, changeStudio, startDesigner, exportPack } from "./shared/rpc";
+import { readStudio, readActiveTheme, changeStudio, startDesigner, promptDesigner, exportPack } from "./shared/rpc";
 import { StudioStore } from "./server/store";
 import { ThemeBridge } from "./server/bridge";
 import { Designer } from "./server/designer";
@@ -15,14 +15,20 @@ import { connectAgent } from "./server/agent-integration";
 import { AgentConnectionStore } from "./server/agent-connection";
 import { AgentOwners, ownerTokenEnvironment } from "./server/agent-owners";
 import { componentTriggerCatalog } from "./server/component-triggers";
-import { assertComponentTarget } from "./server/component-access";
+import { assertComponentTarget, assertCustomComponent, customOnlyMessage } from "./server/component-access";
 import { pruneMissingAgents } from "./server/maintenance";
 import { cliPath, resolvePaseoCli } from "./server/paseo-cli";
 import { readAgentConnection, changeAgentConnection, readAgentMcpSetup } from "./shared/agent-connection";
 import * as components from "./shared/component-rpc";
 import { changeStudioPreferences, readStudioPreferences } from "./shared/preferences";
 import { PreferencesStore } from "./server/preferences";
+import { Spark } from "./server/spark";
+import { readSparkModels, runSpark } from "./shared/spark";
+import { liveInputSchema } from "./shared/live";
+import type { ComponentLibrary } from "./shared/components";
 import { z } from "zod";
+
+const listedOwnInstances = 20;
 
 export default function contribute(server: PluginServerContext) {
   const directory = join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "theme-studio");
@@ -33,12 +39,15 @@ export default function contribute(server: PluginServerContext) {
   const componentService = new ComponentService(directory);
   const controller = new ComponentController(componentService, store);
   const bind = (context: PluginHandlerContext) => controller.bind(context.paseo);
+  // Clients get the catalog, per-component totals, and the cards the user interacted with.
+  const view = async (library: ComponentLibrary) =>
+    componentService.view(library, await componentService.interactedInstances());
   const designerId = async () => (await store.read()).designerAgentId;
   const bridge = new ThemeBridge(store, async (name, input, caller) => {
     switch (name) {
       case "list_component_triggers": {
         z.object({}).strict().parse(input);
-        return componentTriggerCatalog(await componentService.read(), (await connection.read()).automaticTriggers);
+        return componentTriggerCatalog(await componentService.catalog(), (await connection.read()).automaticTriggers);
       }
       case "trigger_component": {
         const value = components.componentTriggerPublishSchema.parse(input);
@@ -48,15 +57,25 @@ export default function contribute(server: PluginServerContext) {
           );
         if (!value.agentId) throw new Error("Specify target agentId; owner context unavailable.");
         assertComponentTarget(caller, value.agentId, await designerId());
+        assertCustomComponent(await componentService.catalog(), value.componentId, value.version);
         return controller.trigger({ ...value, agentId: value.agentId });
       }
       case "list_components":
         z.object({}).strict().parse(input);
-        return componentService.read();
-      case "read_component_instance":
-        return controller.listInstance(components.readComponentInstance.input.parse(input).instanceId);
+        // An agent sees its own recent cards; other conversations only count toward the totals.
+        return componentService.view(
+          await componentService.catalog(),
+          caller ? (await componentService.agentInstances(caller)).slice(-listedOwnInstances) : [],
+        );
+      case "read_component_instance": {
+        const { instanceId } = components.readComponentInstance.input.parse(input);
+        const instance = await componentService.readInstance(instanceId);
+        // A live frame has no library definition; its HTML is in instance.live.
+        if (instance.live) return { instance, definition: null, kind: "live-frame" };
+        return controller.listInstance(instanceId);
+      }
       case "create_composition":
-        return componentService.createComposition(components.componentCreateSchema.parse(input));
+        throw new Error(customOnlyMessage);
       case "create_code_component":
         return componentService.createCode(components.componentCodeSchema.parse(input));
       case "build_components":
@@ -66,6 +85,7 @@ export default function contribute(server: PluginServerContext) {
         const designerAgentId = await designerId();
         const target = value.agentId ?? designerAgentId;
         if (target) assertComponentTarget(caller, target, designerAgentId);
+        assertCustomComponent(await componentService.catalog(), value.componentId, value.version);
         return (await controller.publish(value)).instance;
       }
       case "update_component_state": {
@@ -73,6 +93,14 @@ export default function contribute(server: PluginServerContext) {
         const instance = await componentService.readInstance(value.instanceId);
         assertComponentTarget(caller, instance.agentId, await designerId());
         return controller.updateState(value);
+      }
+      case "show_live": {
+        const { agentId, state, ...live } = liveInputSchema.parse(input);
+        const target = agentId ?? caller;
+        if (!target) throw new Error("Specify agentId; this agent's identity could not be verified.");
+        assertComponentTarget(caller, target, await designerId());
+        const instance = await controller.publishLive({ agentId: target, live, ...(state ? { state } : {}) });
+        return { instanceId: instance.id, revision: instance.revision, shown: true };
       }
       case "favorite_component": {
         const value = components.favoriteComponent.input.parse(input);
@@ -87,6 +115,7 @@ export default function contribute(server: PluginServerContext) {
     }
   });
   const designer = new Designer(store, bridge);
+  const spark = new Spark(store, preferences);
   const removeCreateHook = server.before("agent.create", async ({ request }, context) => {
     let enabled = false;
     try {
@@ -180,39 +209,86 @@ export default function contribute(server: PluginServerContext) {
     bind(context);
     return designer.start(input, context.paseo);
   });
-  server.handle(components.readComponentLibrary, (_, context) => {
+  server.handle(promptDesigner, async ({ text, ...session }, context) => {
     bind(context);
-    return componentService.read();
+    const started = await designer.start(session, context.paseo);
+    const agent = context.paseo.agents.ref(started.agentId);
+    const refreshed = await agent.refresh();
+    if (!refreshed) throw new Error("The designer could not be reached. Start a new designer session.");
+    if (refreshed.agent.providerUnavailable) throw new Error("The designer's provider is unavailable.");
+    if (agent.status === "running" || agent.activeTurn)
+      throw new Error("The designer is still working on the previous request. Send this when it finishes.");
+    if ((agent.pendingPermissions?.length ?? 0) > 0)
+      throw new Error("The designer is waiting for a permission. Answer it in its chat first.");
+    await agent.send(text);
+    return started;
   });
-  server.handle(components.createComposition, (input, context) => {
+  server.handle(readSparkModels, (_, context) => {
     bind(context);
-    return componentService.createComposition(input);
+    return spark.listModels(context.paseo);
   });
-  server.handle(components.createCodeComponent, (input, context) => {
+  server.handle(runSpark, (input, context) => {
     bind(context);
-    return componentService.createCode(input);
+    return spark.ask(input, context.paseo);
   });
-  server.handle(components.favoriteComponent, (input, context) => {
+  server.handle(components.readComponentLibrary, async (_, context) => {
     bind(context);
-    return componentService.setFavorite({
+    return view(await componentService.catalog());
+  });
+  server.handle(components.readComponentEvents, async (_, context) => {
+    bind(context);
+    return { instances: await componentService.interactedInstances() };
+  });
+  server.handle(components.readComponentStorage, (_, context) => {
+    bind(context);
+    return componentService.storage();
+  });
+  server.handle(components.clearComponentInstances, async (input, context) => {
+    bind(context);
+    const removed =
+      input.scope === "closed-conversations"
+        ? (await pruneMissingAgents(controller, componentService, owners)).instances
+        : await componentService.clearInstances(
+            input.scope === "component"
+              ? { componentId: input.componentId }
+              : { before: new Date(Date.now() - input.days * 86400000).toISOString() },
+          );
+    return { removed, storage: await componentService.storage() };
+  });
+  server.handle(components.createCodeComponent, async (input, context) => {
+    bind(context);
+    const result = await componentService.createCode(input);
+    return { ...result, library: await view(result.library) };
+  });
+  server.handle(components.favoriteComponent, async (input, context) => {
+    bind(context);
+    return view(
+      await componentService.setFavorite({
+        expectedRevision: input.expectedRevision,
+        id: input.componentId,
+        favorite: input.favorite,
+      }),
+    );
+  });
+  server.handle(components.deleteComponent, async (input, context) => {
+    bind(context);
+    const result = await componentService.deleteComponent({
       expectedRevision: input.expectedRevision,
       id: input.componentId,
-      favorite: input.favorite,
     });
+    return { ...result, library: await view(result.library) };
   });
-  server.handle(components.deleteComponent, (input, context) => {
+  server.handle(components.buildComponents, async (input, context) => {
     bind(context);
-    return componentService.deleteComponent({ expectedRevision: input.expectedRevision, id: input.componentId });
-  });
-  server.handle(components.buildComponents, (input, context) => {
-    bind(context);
-    return componentService.build(input);
+    const result = await componentService.build(input);
+    return { ...result, library: await view(result.library) };
   });
   server.handle(components.activateComponentBuild, async (input, context) => {
     bind(context);
     // Resolve before activating so a missing CLI cannot leave activated code unloaded.
     const paseoCli = resolvePaseoCli();
-    const result = await componentService.activateBuild(input);
+    const activated = await componentService.activateBuild(input);
+    const result = { ...activated, library: await view(activated.library) };
     // Reply before reloading this worker. The user confirmed the source review; the build passed typecheck.
     setTimeout(() => {
       const child = spawn(paseoCli, ["plugin", "reload", "theme-studio", "--home", dirname(directory)], {
@@ -227,7 +303,14 @@ export default function contribute(server: PluginServerContext) {
   });
   server.handle(components.publishComponent, async (input, context) => {
     bind(context);
+    assertCustomComponent(await componentService.catalog(), input.componentId, input.version);
     return (await controller.publish(input)).instance;
+  });
+  server.handle(components.readLiveInstance, async (input, context) => {
+    bind(context);
+    const instance = await componentService.readInstance(input.instanceId);
+    if (!instance.live) throw new Error("This is not a live frame.");
+    return instance;
   });
   server.handle(components.readComponentInstance, (input, context) => {
     bind(context);
@@ -269,6 +352,7 @@ export default function contribute(server: PluginServerContext) {
     await controller.close();
     await componentService.close();
     await designer.close();
+    await spark.close();
     await bridge.close();
     await store.close();
   };

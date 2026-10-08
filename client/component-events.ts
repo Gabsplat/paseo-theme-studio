@@ -72,7 +72,7 @@ export function createComponentEventIndex() {
   }
 
   return {
-    updateLibrary(library: ComponentLibrary) {
+    updateLibrary(library: Pick<ComponentLibrary, "instances">) {
       let changed = false;
       for (const instance of library.instances) changed = remember(instance) || changed;
       if (changed) rebuild();

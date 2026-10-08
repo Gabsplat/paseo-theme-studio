@@ -25,6 +25,17 @@ export const startDesigner = defineRpc({
   output: z.object({ agentId: z.string(), workspaceId: z.string() }),
 });
 
+/** Sends a brief to the designer's native chat, starting the designer when there is none. */
+export const promptDesigner = defineRpc({
+  name: "studio.designer-prompt",
+  input: z.object({
+    text: z.string().trim().min(1).max(6000),
+    workspaceId: z.string().optional(),
+    provider: z.string().optional(),
+    model: z.string().optional(),
+  }),
+  output: z.object({ agentId: z.string(), workspaceId: z.string() }),
+});
 export const exportPack = defineRpc({
   name: "studio.export-pack",
   input: z.object({ expectedRevision: z.number().int().nonnegative(), name: z.string().min(1).max(60).optional() }),

@@ -11,3 +11,6 @@ Community starting palettes are adapted from themes published in the T3 Themes g
 https://t3themes.com (https://github.com/SunkenInTime/t3-themes)
 Each palette names its author in shared/community-presets.ts and in the Packs inspector.
 T3 Themes and Theme Studio are not affiliated with T3 Tools.
+
+Live frames inline Preact (https://preactjs.com) and htm (https://github.com/developit/htm),
+both MIT licensed, Copyright (c) Jason Miller and contributors. See client/live-kit.ts.

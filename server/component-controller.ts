@@ -9,6 +9,7 @@ import {
   type ComponentDefinition,
   type ComponentEvent,
   type ComponentInstance,
+  type ComponentLive,
   type ComponentLibrary,
   type ComponentState,
   type ComponentTrigger,
@@ -18,7 +19,9 @@ import { componentEventPrompt } from "../shared/component-event";
 import { ComponentRevisionConflict } from "./components";
 
 interface ComponentControllerService {
-  read(): Promise<ComponentLibrary>;
+  catalog(): Promise<ComponentLibrary>;
+  agentInstances(agentId: string): Promise<ComponentInstance[]>;
+  pendingOwners(): Promise<string[]>;
   createInstance(input: {
     expectedRevision: number;
     componentId: string;
@@ -46,6 +49,11 @@ interface ComponentControllerService {
   }): Promise<ComponentInstance>;
   markDispatched(input: { instanceId: string; eventId: string }): Promise<ComponentInstance>;
   removeInstance(instanceId: string): Promise<void>;
+  createLiveInstance(input: {
+    agentId: string;
+    live: ComponentLive;
+    state?: ComponentState;
+  }): Promise<ComponentInstance>;
 }
 
 type PublishComponentInput = {
@@ -118,7 +126,7 @@ export class ComponentController {
 
   async publish(input: PublishComponentInput): Promise<{ library: ComponentLibrary; instance: ComponentInstance }> {
     const paseo = this.requirePaseo();
-    const library = await this.service.read();
+    const library = await this.service.catalog();
     const definitions = library.definitions.filter(
       definition =>
         definition.id === input.componentId && (input.version === undefined || definition.version === input.version),
@@ -162,6 +170,32 @@ export class ComponentController {
     return created;
   }
 
+  /** Shows agent-written HTML in the owner's chat at once: no library entry, no build, no activation. */
+  async publishLive(input: {
+    agentId: string;
+    live: ComponentLive;
+    state?: ComponentState;
+  }): Promise<ComponentInstance> {
+    const agent = this.requirePaseo().agents.ref(input.agentId);
+    const refreshed = await agent.refresh();
+    if (!refreshed) throw new Error("The live frame's owner agent was not found.");
+    if (agent.archivedAt) throw new Error("The live frame's owner agent is archived.");
+    const instance = await this.service.createLiveInstance(input);
+    try {
+      await agent.timeline.append({
+        type: "plugin",
+        id: instance.id,
+        kind: "studio-live",
+        version: 1,
+        data: { instanceId: instance.id },
+      });
+    } catch (error) {
+      await this.service.removeInstance(instance.id).catch(() => {});
+      throw error;
+    }
+    return instance;
+  }
+
   async trigger(input: TriggerComponentInput): Promise<{ instance: ComponentInstance; reused: boolean }> {
     const value = triggerInputSchema.parse(input);
     const agent = this.requirePaseo().agents.ref(value.agentId);
@@ -186,9 +220,8 @@ export class ComponentController {
     if (lastUser?.item.type === "user_message" && (!lastUser.turnId || lastUser.turnId === turnId)) {
       const userMessage = lastUser.item;
       const messageId = userMessage.clientMessageId ?? userMessage.messageId;
-      const library = await this.service.read();
-      const callback = library.instances
-        .filter(instance => instance.agentId === value.agentId && instance.componentId === value.componentId)
+      const callback = (await this.service.agentInstances(value.agentId))
+        .filter(instance => instance.componentId === value.componentId)
         .some(instance =>
           instance.events.some(
             event =>
@@ -204,7 +237,7 @@ export class ComponentController {
     }
     for (let attempt = 0; attempt < 5; attempt++) {
       if (this.closed) throw new Error("The component controller has stopped.");
-      const library = await this.service.read();
+      const library = await this.service.catalog();
       const definition = library.definitions
         .filter(
           item => item.id === value.componentId && (value.version === undefined || item.version === value.version),
@@ -370,7 +403,7 @@ export class ComponentController {
 
   async listInstance(instanceId: string): Promise<{ instance: ComponentInstance; definition: ComponentDefinition }> {
     const instance = await this.service.readInstance(instanceId);
-    const library = await this.service.read();
+    const library = await this.service.catalog();
     const definition = library.definitions.find(
       value => value.id === instance.componentId && value.version === instance.componentVersion,
     );
@@ -380,18 +413,7 @@ export class ComponentController {
 
   async drain(agentId?: string): Promise<ComponentDrainResult> {
     if (this.closed) return emptyDrain();
-    const library = await this.service.read();
-    const owners = agentId
-      ? [agentId]
-      : [
-          ...new Set(
-            library.instances
-              .filter(instance =>
-                instance.events.some(event => !event.dispatchedAt && event.action.action !== "__state__"),
-              )
-              .map(instance => instance.agentId),
-          ),
-        ];
+    const owners = agentId ? [agentId] : await this.service.pendingOwners();
     const results = await Promise.all(owners.map(owner => this.drainOwner(owner)));
     return {
       dispatched: results.flatMap(result => result.dispatched),
@@ -415,9 +437,7 @@ export class ComponentController {
 
   private async dispatchOne(agentId: string): Promise<ComponentDrainResult> {
     const result = emptyDrain();
-    const library = await this.service.read();
-    const pending = library.instances
-      .filter(instance => instance.agentId === agentId)
+    const pending = (await this.service.agentInstances(agentId))
       .flatMap(instance =>
         instance.events
           .filter(event => !event.dispatchedAt && event.action.action !== "__state__")

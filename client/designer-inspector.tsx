@@ -23,7 +23,7 @@ export const examplePrompts = [
   "Check text contrast and fix anything under 4.5:1.",
   "Use compact density, mono text, and bordered tool cards.",
   "Add a Notes panel with a short checklist and a progress bar.",
-  "Create a native decision card with a select, a notes input, and a Confirm button. Publish it here.",
+  "Design a custom card for when a test run fails, in the style of this pack. I will activate it; then publish it here.",
 ];
 
 /** The provider and model a new designer session will use. */

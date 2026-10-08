@@ -376,17 +376,17 @@ function ComponentFlow({ theme }: Props) {
         <Box theme={theme} flex={1}>
           <Caption
             theme={theme}
-            icon="Blocks"
-            title="Composition"
-            text="Built from native blocks: text, stats, lists, progress, buttons, inputs, selects, toggles. Ready instantly."
+            icon="Sparkles"
+            title="Always custom"
+            text="An agent designs each component for the job. Nothing is assembled from pre-made blocks."
           />
         </Box>
         <Box theme={theme} flex={1}>
           <Caption
             theme={theme}
             icon="Code2"
-            title="Generated code"
-            text="Any React Native UI. You build it, review its source, and activate it before it runs."
+            title="No frame"
+            text="It appears in the chat exactly as designed. You review its source and activate it before it runs."
           />
         </Box>
       </View>

@@ -9,7 +9,7 @@ test("maintenance removes data only for agents that Paseo reports missing", asyn
   const result = await pruneMissingAgents(
     { agentPresence: async id => presence[id as keyof typeof presence] },
     {
-      read: async () => ({ instances: [{ agentId: "gone" }, { agentId: "flaky" }, { agentId: "live" }] }) as never,
+      instanceAgents: async () => ["gone", "flaky", "live"],
       removeAgentInstances: async ids => {
         removedAgents = ids;
         return ids.length;

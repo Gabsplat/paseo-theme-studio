@@ -55,10 +55,8 @@ test("trigger discovery uses latest versions, enabled rules and activation readi
   assert.equal(catalog.automaticTriggers, false);
   assert.deepEqual(
     catalog.components.map(component => [component.componentId, component.available, component.triggers.length]),
-    [
-      ["chart", false, 1],
-      ["ready", true, 1],
-    ],
+    // "ready" is a retired block composition, so agents are never offered it.
+    [["chart", false, 1]],
   );
   assert.equal(JSON.stringify(catalog).includes("private source"), false);
   library.activeKeys = ["chart@1"];

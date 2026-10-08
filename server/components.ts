@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import {
   componentActionSchema,
   componentDefinitionSchema,
+  componentInstanceFileSchema,
+  componentLiveSchema,
   componentInstanceTriggerSchema,
   componentLibrarySchema,
   componentStateSchema,
@@ -15,8 +17,11 @@ import {
   type ComponentInstance,
   type ComponentLibrary,
   type ComponentState,
+  type ComponentStorage,
+  type ComponentLive,
 } from "../shared/components";
 import { locateProject } from "./project";
+import { liveComponentId } from "../shared/components";
 import { acquireLock, FileSnapshot, writeFileAtomic } from "./storage";
 import { clientTsconfig, findModules, typecheckDirectory, writeFiles } from "./typecheck";
 
@@ -246,16 +251,71 @@ function generatedFiles(definitions: ComponentDefinition[]): Record<string, stri
   return files;
 }
 
+const instanceDirectoryName = "component-instances";
+const safeAgentFile = /^[A-Za-z0-9_-]{1,100}$/;
+/** One file per owning conversation keeps every write proportional to that conversation. */
+const shardName = (agentId: string) =>
+  (safeAgentFile.test(agentId) ? agentId : "h-" + createHash("sha256").update(agentId).digest("hex")) + ".json";
+const hasUserEvent = (instance: ComponentInstance) =>
+  instance.events.some(event => event.action.action !== "__state__");
+const hasPendingEvent = (instance: ComponentInstance) =>
+  instance.events.some(event => !event.dispatchedAt && event.action.action !== "__state__");
+const byCreation = (a: ComponentInstance, b: ComponentInstance) =>
+  a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+
+type Shard = { agentId: string; instances: ComponentInstance[] };
+type ShardSummary = {
+  key: string;
+  agentId: string;
+  bytes: number;
+  ids: Set<string>;
+  counts: Record<string, number>;
+  componentBytes: Record<string, number>;
+  pending: boolean;
+  eventful: ComponentInstance[];
+  oldest: string | null;
+};
+type Transaction = {
+  library(): Promise<ComponentLibrary>;
+  /** The mutable instances of one conversation; saved when the transaction commits. */
+  shard(agentId: string): Promise<Shard>;
+  /** Every conversation that currently stores instances. */
+  agents(): Promise<string[]>;
+  ownerOf(instanceId: string): Promise<string>;
+};
+
+async function directorySize(directory: string): Promise<number> {
+  let total = 0;
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    try {
+      const info = await stat(join(directory, name));
+      total += info.isDirectory() ? await directorySize(join(directory, name)) : info.size;
+    } catch {
+      /* Removed concurrently. */
+    }
+  }
+  return total;
+}
+
 export class ComponentService {
   readonly file: string;
+  private readonly instanceDirectory: string;
   private queue: Promise<unknown> = Promise.resolve();
   private readonly snapshot: FileSnapshot<ComponentLibrary>;
+  private readonly summaries = new Map<string, ShardSummary>();
   constructor(
     readonly directory: string,
     /** The plugin's install directory; found through the daemon when omitted. */
     private readonly project: () => Promise<string> = locateProject,
   ) {
     this.file = join(directory, "components.json");
+    this.instanceDirectory = join(directory, instanceDirectoryName);
     this.snapshot = new FileSnapshot(this.file);
   }
   private serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -266,11 +326,14 @@ export class ComponentService {
   private acquire() {
     return acquireLock(this.directory, ".components-transaction", "Component storage is busy. Retry shortly.", 300);
   }
+  /** Reads the catalog. Callers hold the transaction lock, because a legacy file is migrated here. */
   private async readDisk(): Promise<ComponentLibrary> {
     const cached = await this.snapshot.current();
     if (cached) return clone(cached);
     try {
-      return clone((await this.snapshot.load(validateLibrary)).value);
+      const library = clone((await this.snapshot.load(validateLibrary)).value);
+      if (library.instances.length) await this.migrateInstances(library);
+      return library;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT")
         throw new Error("Component storage is invalid. The existing file has been preserved.", { cause: error });
@@ -287,14 +350,105 @@ export class ComponentService {
       return initial;
     }
   }
+  /** Earlier versions kept every instance inside components.json, capped at 500. */
+  private async migrateInstances(library: ComponentLibrary) {
+    const grouped = new Map<string, ComponentInstance[]>();
+    for (const instance of library.instances)
+      grouped.set(instance.agentId, [...(grouped.get(instance.agentId) ?? []), instance]);
+    for (const [agentId, instances] of grouped) {
+      const existing = (await this.loadShard(shardName(agentId)))?.instances ?? [];
+      const known = new Set(existing.map(instance => instance.id));
+      await this.writeShard({ agentId, instances: [...existing, ...instances.filter(item => !known.has(item.id))] });
+    }
+    library.instances = [];
+    await this.persist(library);
+  }
   private async persist(library: ComponentLibrary) {
-    const valid = validateLibrary(library);
+    const { instanceCounts: _view, ...stored } = library;
+    const valid = validateLibrary({ ...stored, instances: [] });
     await writeFileAtomic(this.directory, this.file, JSON.stringify(valid, null, 2) + "\n");
     await this.snapshot.remember(clone(valid));
   }
-  read(): Promise<ComponentLibrary> {
+  private async loadShard(name: string): Promise<Shard | null> {
+    try {
+      const file = componentInstanceFileSchema.parse(
+        JSON.parse(await readFile(join(this.instanceDirectory, name), "utf8")),
+      );
+      return { agentId: file.agentId, instances: file.instances };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw new Error(`Component instance storage is invalid (${name}). The existing file has been preserved.`, {
+        cause: error,
+      });
+    }
+  }
+  private async writeShard(shard: Shard) {
+    const file = join(this.instanceDirectory, shardName(shard.agentId));
+    if (!shard.instances.length) {
+      await rm(file, { force: true });
+      return;
+    }
+    const valid = componentInstanceFileSchema.parse({ format: 1, ...shard });
+    if (new Set(valid.instances.map(instance => instance.id)).size !== valid.instances.length)
+      throw new Error("Component instance IDs must be unique.");
+    await mkdir(this.instanceDirectory, { recursive: true, mode: 0o700 });
+    await writeFileAtomic(this.instanceDirectory, file, JSON.stringify(valid) + "\n");
+  }
+  /**
+   * Summaries of every conversation's file, refreshed by stat identity. Writers rename
+   * complete files into place, so an unchanged file needs neither a lock nor a reread.
+   */
+  private async index(): Promise<ShardSummary[]> {
+    let names: string[];
+    try {
+      names = (await readdir(this.instanceDirectory)).filter(name => name.endsWith(".json") && !name.startsWith("."));
+    } catch {
+      names = [];
+    }
+    const present = new Set(names);
+    for (const name of this.summaries.keys()) if (!present.has(name)) this.summaries.delete(name);
+    await Promise.all(
+      names.map(async name => {
+        try {
+          const info = await stat(join(this.instanceDirectory, name));
+          const key = `${info.ino}:${info.size}:${info.mtimeMs}`;
+          if (this.summaries.get(name)?.key === key) return;
+          const shard = await this.loadShard(name);
+          if (!shard) {
+            this.summaries.delete(name);
+            return;
+          }
+          const summary: ShardSummary = {
+            key,
+            agentId: shard.agentId,
+            bytes: info.size,
+            ids: new Set(shard.instances.map(instance => instance.id)),
+            counts: {},
+            componentBytes: {},
+            pending: shard.instances.some(hasPendingEvent),
+            eventful: shard.instances.filter(hasUserEvent),
+            oldest: shard.instances.reduce<string | null>(
+              (oldest, instance) => (!oldest || instance.createdAt < oldest ? instance.createdAt : oldest),
+              null,
+            ),
+          };
+          for (const instance of shard.instances) {
+            summary.counts[instance.componentId] = (summary.counts[instance.componentId] ?? 0) + 1;
+            summary.componentBytes[instance.componentId] =
+              (summary.componentBytes[instance.componentId] ?? 0) + JSON.stringify(instance).length;
+          }
+          this.summaries.set(name, summary);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          this.summaries.delete(name);
+        }
+      }),
+    );
+    return [...this.summaries.values()];
+  }
+  /** The catalog without instances: definitions, favorites, builds, and active code keys. */
+  catalog(): Promise<ComponentLibrary> {
     return this.serial(async () => {
-      // Writers rename complete files into place, so an unchanged file needs no lock.
       const cached = await this.snapshot.current();
       if (cached) return clone(cached);
       const release = await this.acquire();
@@ -305,12 +459,99 @@ export class ComponentService {
       }
     });
   }
+  /** The catalog with every stored instance. Proportional to all storage; hot paths use the narrower readers. */
+  async read(): Promise<ComponentLibrary> {
+    const library = await this.catalog();
+    const shards = await Promise.all((await this.index()).map(summary => this.loadShard(shardName(summary.agentId))));
+    library.instances = shards.flatMap(shard => shard?.instances ?? []).sort(byCreation);
+    return library;
+  }
   list() {
     return this.read();
   }
-  private mutate<T>(
+  /** Instances published in one conversation, oldest first. */
+  async agentInstances(agentId: string): Promise<ComponentInstance[]> {
+    return ((await this.loadShard(shardName(agentId)))?.instances ?? []).sort(byCreation);
+  }
+  /** Conversations that store at least one instance. */
+  async instanceAgents(): Promise<string[]> {
+    return (await this.index()).map(summary => summary.agentId);
+  }
+  /** Conversations with an interaction that has not reached its agent yet. */
+  async pendingOwners(): Promise<string[]> {
+    return (await this.index()).filter(summary => summary.pending).map(summary => summary.agentId);
+  }
+  /** Instances the user interacted with; the client needs them to recognise its own technical messages. */
+  async interactedInstances(): Promise<ComponentInstance[]> {
+    return clone((await this.index()).flatMap(summary => summary.eventful));
+  }
+  private async counts(): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const summary of await this.index())
+      for (const [id, count] of Object.entries(summary.counts)) counts[id] = (counts[id] ?? 0) + count;
+    return counts;
+  }
+  /** What clients and agents receive: the catalog, per-component totals, and a chosen slice of instances. */
+  async view(library: ComponentLibrary, instances: ComponentInstance[] = []): Promise<ComponentLibrary> {
+    return { ...library, instances, instanceCounts: await this.counts() };
+  }
+  /** Where Theme Studio's disk space goes. */
+  async storage(): Promise<ComponentStorage> {
+    const library = await this.catalog();
+    const index = await this.index();
+    const size = async (name: string) => {
+      try {
+        return (await stat(join(this.directory, name))).size;
+      } catch {
+        return 0;
+      }
+    };
+    const parts = [
+      { id: "instances", label: "Cards published in chats", bytes: index.reduce((sum, item) => sum + item.bytes, 0) },
+      { id: "library", label: "Component definitions", bytes: await size("components.json") },
+      { id: "packs", label: "Packs and draft history", bytes: await size("studio.json") },
+      {
+        id: "builds",
+        label: "Code builds",
+        bytes:
+          (await directorySize(join(this.directory, "component-builds"))) +
+          (await directorySize(join(this.directory, "component-validation"))),
+      },
+    ];
+    const known = parts.reduce((sum, part) => sum + part.bytes, 0);
+    const totalBytes = Math.max(known, await directorySize(this.directory));
+    parts.push({ id: "other", label: "Settings and agent links", bytes: totalBytes - known });
+    // Live frames have no definition but take space like any card, so they get a row too.
+    const ids = [...new Set([...library.definitions.map(definition => definition.id), liveComponentId])];
+    return {
+      directory: this.directory,
+      totalBytes,
+      parts,
+      instances: index.reduce((sum, item) => sum + item.ids.size, 0),
+      conversations: index.length,
+      oldestInstanceAt: index.reduce<string | null>(
+        (oldest, item) => (item.oldest && (!oldest || item.oldest < oldest) ? item.oldest : oldest),
+        null,
+      ),
+      components: ids
+        .map(id => ({
+          id,
+          name: library.definitions.findLast(definition => definition.id === id)?.name ?? "Live frames",
+          versions: library.definitions.filter(definition => definition.id === id).length,
+          instances: index.reduce((sum, item) => sum + (item.counts[id] ?? 0), 0),
+          bytes: index.reduce((sum, item) => sum + (item.componentBytes[id] ?? 0), 0),
+        }))
+        .filter(item => item.id !== liveComponentId || item.instances)
+        .sort((a, b) => b.bytes - a.bytes),
+    };
+  }
+  /**
+   * Runs one locked transaction over the catalog and any conversations it touches.
+   * Changed conversations are written first; the catalog revision advances only when the catalog changed.
+   */
+  private transact<T>(
     expectedRevision: number | null,
-    transform: (library: ComponentLibrary) => T | Promise<T>,
+    operation: (transaction: Transaction) => T | Promise<T>,
   ): Promise<{ library: ComponentLibrary; result: T }> {
     return this.serial(async () => {
       const release = await this.acquire();
@@ -319,7 +560,34 @@ export class ComponentService {
         if (expectedRevision !== null && library.revision !== expectedRevision)
           throw new ComponentRevisionConflict(library.revision);
         const before = JSON.stringify(library);
-        const result = await transform(library);
+        const shards = new Map<string, { shard: Shard; before: string }>();
+        const transaction: Transaction = {
+          library: async () => library,
+          shard: async agentId => {
+            const loaded = shards.get(agentId);
+            if (loaded) return loaded.shard;
+            const shard = (await this.loadShard(shardName(agentId))) ?? { agentId, instances: [] };
+            shards.set(agentId, { shard, before: JSON.stringify(shard.instances) });
+            return shard;
+          },
+          agents: async () => (await this.index()).map(summary => summary.agentId),
+          ownerOf: async instanceId => {
+            for (const [agentId, { shard }] of shards)
+              if (shard.instances.some(instance => instance.id === instanceId)) return agentId;
+            const owner = (await this.index()).find(summary => summary.ids.has(instanceId));
+            if (!owner) throw new Error("Component instance was not found.");
+            return owner.agentId;
+          },
+        };
+        const result = await operation(transaction);
+        const known = new Set(library.definitions.map(definition => `${definition.id}@${definition.version}`));
+        for (const { shard, before: previous } of shards.values()) {
+          if (JSON.stringify(shard.instances) === previous) continue;
+          for (const instance of shard.instances)
+            if (!instance.live && !known.has(`${instance.componentId}@${instance.componentVersion}`))
+              throw new Error("A component instance references an unknown version.");
+          await this.writeShard(shard);
+        }
         if (JSON.stringify(library) !== before) {
           library.revision++;
           await this.persist(library);
@@ -329,6 +597,12 @@ export class ComponentService {
         await release();
       }
     });
+  }
+  private mutate<T>(
+    expectedRevision: number | null,
+    transform: (library: ComponentLibrary) => T | Promise<T>,
+  ): Promise<{ library: ComponentLibrary; result: T }> {
+    return this.transact(expectedRevision, async transaction => transform(await transaction.library()));
   }
   async createComposition(input: {
     expectedRevision: number;
@@ -360,7 +634,7 @@ export class ComponentService {
   async createCode(input: { expectedRevision: number; id: string; name: string; code: string; triggers?: unknown }) {
     const triggers = input.triggers === undefined ? undefined : componentTriggersSchema.parse(input.triggers);
     validateComponentCode(input.code, await findModules(await this.project()));
-    const snapshot = await this.read();
+    const snapshot = await this.catalog();
     if (snapshot.revision !== input.expectedRevision) throw new ComponentRevisionConflict(snapshot.revision);
     const version =
       Math.max(0, ...snapshot.definitions.filter(item => item.id === input.id).map(item => item.version)) + 1;
@@ -390,20 +664,26 @@ export class ComponentService {
    * Chat rows that pointed at those instances render as deleted.
    */
   async deleteComponent(input: { expectedRevision: number; id: string }) {
-    const { library, result } = await this.mutate(input.expectedRevision, library => {
+    const { library, result } = await this.transact(input.expectedRevision, async transaction => {
+      const library = await transaction.library();
       if (!library.definitions.some(item => item.id === input.id)) throw new Error("Component was not found.");
       const removedKeys = new Set(
         library.definitions.filter(item => item.id === input.id).map(item => `${item.id}@${item.version}`),
       );
-      const before = library.instances.length;
+      let removedInstances = 0;
+      for (const agentId of await transaction.agents()) {
+        const shard = await transaction.shard(agentId);
+        const kept = shard.instances.filter(instance => instance.componentId !== input.id);
+        removedInstances += shard.instances.length - kept.length;
+        shard.instances = kept;
+      }
       library.definitions = library.definitions.filter(item => item.id !== input.id);
-      library.instances = library.instances.filter(instance => instance.componentId !== input.id);
       library.favorites = library.favorites.filter(id => id !== input.id);
       library.activeKeys = library.activeKeys.filter(key => !removedKeys.has(key));
       // Builds that include a deleted version can no longer be activated.
       const stale = library.builds.filter(build => build.keys.some(key => removedKeys.has(key)));
       library.builds = library.builds.filter(build => !stale.includes(build));
-      return { removedInstances: before - library.instances.length, staleBuilds: stale.map(build => build.id) };
+      return { removedInstances, staleBuilds: stale.map(build => build.id) };
     });
     for (const id of result.staleBuilds)
       await rm(join(this.directory, "component-builds", id), { recursive: true, force: true });
@@ -431,7 +711,9 @@ export class ComponentService {
     const trigger = input.trigger === undefined ? undefined : componentInstanceTriggerSchema.parse(input.trigger);
     if (trigger && input.version === undefined)
       throw new Error("Triggered components require an explicit immutable version.");
-    const { library, result } = await this.mutate(null, library => {
+    const { library, result } = await this.transact(null, async transaction => {
+      const library = await transaction.library();
+      const shard = await transaction.shard(input.agentId);
       const versions = library.definitions.filter(item => item.id === input.componentId);
       const definition = input.version ? versions.find(item => item.version === input.version) : versions.at(-1);
       if (!definition) throw new Error("Component version was not found.");
@@ -439,9 +721,8 @@ export class ComponentService {
         const declared = definition.triggers.find(item => item.id === trigger.id);
         if (!declared || !declared.enabled || declared.event !== trigger.event)
           throw new Error("This version does not declare an enabled trigger for that event.");
-        const existing = library.instances.find(
+        const existing = shard.instances.find(
           instance =>
-            instance.agentId === input.agentId &&
             instance.componentId === definition.id &&
             instance.componentVersion === definition.version &&
             instance.trigger?.id === trigger.id &&
@@ -467,38 +748,104 @@ export class ComponentService {
         createdAt: new Date().toISOString(),
         ...(trigger ? { trigger } : {}),
       };
-      library.instances.push(instance);
+      shard.instances.push(instance);
       return { instance, ...(trigger ? { reused: false } : {}) };
     });
     return { library, ...result };
   }
+  /** Stores a live frame in its conversation. It has no library definition and needs no activation. */
+  async createLiveInstance(input: { agentId: string; live: ComponentLive; state?: ComponentState }) {
+    const live = componentLiveSchema.parse(input.live);
+    return (
+      await this.transact(null, async transaction => {
+        const shard = await transaction.shard(input.agentId);
+        const instance: ComponentInstance = {
+          id: randomUUID(),
+          componentId: liveComponentId,
+          componentVersion: 1,
+          agentId: input.agentId,
+          state: componentStateSchema.parse(input.state ?? {}),
+          revision: 0,
+          events: [],
+          createdAt: new Date().toISOString(),
+          live,
+        };
+        shard.instances.push(instance);
+        return instance;
+      })
+    ).result;
+  }
   /** Removes one unpublished instance. Used when its chat row could not be appended. */
   async removeInstance(instanceId: string) {
-    await this.mutate(null, library => {
-      library.instances = library.instances.filter(instance => instance.id !== instanceId);
+    await this.transact(null, async transaction => {
+      let agentId: string;
+      try {
+        agentId = await transaction.ownerOf(instanceId);
+      } catch {
+        return null;
+      }
+      const shard = await transaction.shard(agentId);
+      shard.instances = shard.instances.filter(instance => instance.id !== instanceId);
       return null;
     });
   }
   /** Removes instances owned by agents that no longer exist; their conversations are gone. */
   async removeAgentInstances(agentIds: readonly string[]) {
     if (!agentIds.length) return 0;
-    const { result } = await this.mutate(null, library => {
-      const before = library.instances.length;
-      library.instances = library.instances.filter(instance => !agentIds.includes(instance.agentId));
-      return before - library.instances.length;
+    const { result } = await this.transact(null, async transaction => {
+      let removed = 0;
+      for (const agentId of agentIds) {
+        const shard = await transaction.shard(agentId);
+        removed += shard.instances.length;
+        shard.instances = [];
+      }
+      return removed;
+    });
+    return result;
+  }
+  /**
+   * Frees space on request. Removed cards render as deleted in their chats, so nothing
+   * calls this automatically: storage has no limit and old conversations keep their cards.
+   */
+  async clearInstances(input: { componentId?: string; before?: string }) {
+    const { result } = await this.transact(null, async transaction => {
+      let removed = 0;
+      for (const agentId of await transaction.agents()) {
+        const shard = await transaction.shard(agentId);
+        const kept = shard.instances.filter(
+          instance =>
+            (input.componentId !== undefined && instance.componentId !== input.componentId) ||
+            (input.before !== undefined && instance.createdAt >= input.before) ||
+            // An interaction the agent has not received yet is never discarded.
+            hasPendingEvent(instance),
+        );
+        removed += shard.instances.length - kept.length;
+        shard.instances = kept;
+      }
+      return removed;
     });
     return result;
   }
   async readInstance(instanceId: string) {
-    const instance = (await this.read()).instances.find(item => item.id === instanceId);
+    const owner = (await this.index()).find(summary => summary.ids.has(instanceId));
+    const instance = owner && (await this.agentInstances(owner.agentId)).find(item => item.id === instanceId);
     if (!instance) throw new Error("Component instance was not found.");
     return instance;
   }
+  /** Runs `change` on one stored instance inside a transaction. */
+  private async changeInstance<T>(instanceId: string, change: (instance: ComponentInstance) => T): Promise<T> {
+    return (
+      await this.transact(null, async transaction => {
+        const shard = await transaction.shard(await transaction.ownerOf(instanceId));
+        const instance = shard.instances.find(item => item.id === instanceId);
+        if (!instance) throw new Error("Component instance was not found.");
+        return change(instance);
+      })
+    ).result;
+  }
   async interact(input: { instanceId: string; expectedRevision: number; action: unknown }) {
     const action = componentActionSchema.parse(input.action);
-    const { result } = await this.mutate(null, library => {
-      const instance = library.instances.find(item => item.id === input.instanceId);
-      if (!instance) throw new Error("Component instance was not found.");
+    return this.changeInstance(input.instanceId, instance => {
       if (instance.revision !== input.expectedRevision) throw new ComponentRevisionConflict(instance.revision);
       instance.state = componentStateSchema.parse({ ...instance.state, ...action.patch });
       const event = {
@@ -511,7 +858,7 @@ export class ComponentService {
       if (instance.events.filter(item => item.dispatchedAt === null).length >= maxPendingEvents)
         throw new Error("Component event queue is full. Wait for the agent to catch up.");
       instance.events.push(event);
-      // Delivered events are history; keep the most recent ones so the library stays small.
+      // Delivered events are history; keep the most recent ones so each card stays small.
       const delivered = instance.events.filter(item => item.dispatchedAt !== null);
       if (delivered.length > keptDeliveredEvents) {
         const dropped = new Set(delivered.slice(0, delivered.length - keptDeliveredEvents).map(item => item.id));
@@ -520,31 +867,22 @@ export class ComponentService {
       instance.revision++;
       return { instance, event };
     });
-    return result;
   }
   async updateInstance(input: { instanceId: string; expectedRevision: number; state: ComponentState }) {
-    return (
-      await this.mutate(null, library => {
-        const instance = library.instances.find(item => item.id === input.instanceId);
-        if (!instance) throw new Error("Component instance was not found.");
-        if (instance.revision !== input.expectedRevision) throw new ComponentRevisionConflict(instance.revision);
-        instance.state = componentStateSchema.parse(input.state);
-        instance.revision++;
-        return instance;
-      })
-    ).result;
+    return this.changeInstance(input.instanceId, instance => {
+      if (instance.revision !== input.expectedRevision) throw new ComponentRevisionConflict(instance.revision);
+      instance.state = componentStateSchema.parse(input.state);
+      instance.revision++;
+      return instance;
+    });
   }
   async markDispatched(input: { instanceId: string; eventId: string }) {
-    return (
-      await this.mutate(null, library => {
-        const instance = library.instances.find(item => item.id === input.instanceId);
-        if (!instance) throw new Error("Component instance was not found.");
-        const event = instance.events.find(item => item.id === input.eventId);
-        if (!event) throw new Error("Component event was not found.");
-        if (!event.dispatchedAt) event.dispatchedAt = new Date().toISOString();
-        return instance;
-      })
-    ).result;
+    return this.changeInstance(input.instanceId, instance => {
+      const event = instance.events.find(item => item.id === input.eventId);
+      if (!event) throw new Error("Component event was not found.");
+      if (!event.dispatchedAt) event.dispatchedAt = new Date().toISOString();
+      return instance;
+    });
   }
   private async checkSources(definitions: ComponentDefinition[], directory: string) {
     const files = generatedFiles(definitions);
@@ -560,7 +898,7 @@ export class ComponentService {
     return files;
   }
   async build(input: { expectedRevision: number }) {
-    const snapshot = await this.read();
+    const snapshot = await this.catalog();
     if (snapshot.revision !== input.expectedRevision) throw new ComponentRevisionConflict(snapshot.revision);
     const definitions = snapshot.definitions.filter(item => item.mode === "code");
     if (!definitions.length) throw new Error("Create a code component before building.");

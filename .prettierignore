@@ -5,3 +5,4 @@ server/export-assets.ts
 client/generated/
 client/generated-components.tsx
 shared/community-presets.ts
+client/live-kit.ts

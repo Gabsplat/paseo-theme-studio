@@ -163,6 +163,33 @@ export const componentInstanceTriggerSchema = z
     occurrenceKey: z.string().trim().min(1).max(200).default("default"),
   })
   .strict();
+/* Live frame limits live here: components.ts is copied alone into code-component builds and cannot import local modules. */
+export const liveLimits = {
+  /** Agent HTML per frame. The kit is added at render time and does not count. */
+  htmlChars: 120000,
+  titleChars: 80,
+  summaryChars: 400,
+  /** One bridge message, serialized. */
+  messageChars: 16000,
+  minHeight: 80,
+  maxHeight: 720,
+  defaultHeight: 320,
+  /** Frames running at once; older ones pause to a placeholder. */
+  activeFrames: 6,
+} as const;
+/** Live frames are stored as instances of this reserved id, without a library definition. */
+export const liveComponentId = "live-frame";
+
+/** What an agent published with show_live: untrusted HTML that only runs in a sandboxed frame. */
+export const componentLiveSchema = z
+  .object({
+    title: z.string().trim().min(1).max(liveLimits.titleChars),
+    html: z.string().min(1).max(liveLimits.htmlChars),
+    height: z.number().int().min(liveLimits.minHeight).max(liveLimits.maxHeight).optional(),
+    /** Shown on phones, which cannot run the frame. */
+    summary: z.string().trim().max(liveLimits.summaryChars).optional(),
+  })
+  .strict();
 export const componentInstanceSchema = z
   .object({
     id: z.string(),
@@ -174,8 +201,10 @@ export const componentInstanceSchema = z
     events: z.array(componentEventSchema).max(200),
     createdAt: z.string(),
     trigger: componentInstanceTriggerSchema.optional(),
+    live: componentLiveSchema.optional(),
   })
   .strict();
+export type ComponentLive = z.infer<typeof componentLiveSchema>;
 export type ComponentInstance = z.infer<typeof componentInstanceSchema>;
 export const componentBuildSchema = z
   .object({
@@ -188,19 +217,50 @@ export const componentBuildSchema = z
   })
   .strict();
 export type ComponentBuild = z.infer<typeof componentBuildSchema>;
+/**
+ * The component catalog. Storage is unbounded: instances live in one file per owning
+ * conversation, so `instances` here is whatever slice the reader asked for and
+ * `instanceCounts` carries the per-component totals on wire views.
+ */
 export const componentLibrarySchema = z
   .object({
     format: z.literal(1),
     revision: z.number().int().nonnegative(),
-    definitions: z.array(componentDefinitionSchema).max(200),
-    instances: z.array(componentInstanceSchema).max(500),
-    favorites: z.array(componentIdSchema).max(200),
+    definitions: z.array(componentDefinitionSchema),
+    instances: z.array(componentInstanceSchema),
+    favorites: z.array(componentIdSchema),
     builds: z.array(componentBuildSchema).max(100),
     activeKeys: z.array(z.string().max(64)).default([]),
+    instanceCounts: z.record(z.string(), z.number().int().nonnegative()).optional(),
   })
   .strict();
 export type ComponentLibrary = z.infer<typeof componentLibrarySchema>;
 export const componentTimelineSchema = z
   .object({ instanceId: z.string(), componentId: componentIdSchema, componentVersion: z.number().int().positive() })
   .strict();
+export const componentInstanceFileSchema = z
+  .object({ format: z.literal(1), agentId: z.string().min(1), instances: z.array(componentInstanceSchema) })
+  .strict();
+export const componentStorageSchema = z
+  .object({
+    directory: z.string(),
+    totalBytes: z.number().nonnegative(),
+    parts: z.array(z.object({ id: z.string(), label: z.string(), bytes: z.number().nonnegative() }).strict()),
+    instances: z.number().int().nonnegative(),
+    conversations: z.number().int().nonnegative(),
+    oldestInstanceAt: z.string().nullable(),
+    components: z.array(
+      z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          versions: z.number().int().nonnegative(),
+          instances: z.number().int().nonnegative(),
+          bytes: z.number().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type ComponentStorage = z.infer<typeof componentStorageSchema>;
 export type ComponentTimelineData = z.infer<typeof componentTimelineSchema>;

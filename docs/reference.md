@@ -8,7 +8,7 @@ The studio keeps a live, interactive replica of Paseo in the center: its sidebar
 
 Manual edits and agent tools change the draft without changing the active pack. Saving a named library copy also leaves the active pack unchanged.
 
-1. In **Colors**, edit the eight appearance colors or protect colors with locks. The sun/moon button switches light and dark.
+1. In **Colors**, edit the eight appearance colors or protect colors with locks. The info button explains each role, the contrast tiles show the four pairs that matter, and **From one color** builds a whole palette from a single color in five harmonies. The sun/moon button switches light and dark.
 2. In **Design**, choose density, corner radius, typography, tool-card style, pack-note style, and workspace panels.
 3. Review the preview. The status next to the pack name shows whether the draft is active.
 4. Press **Activate** to copy the draft into the active pack. Its registered extensions update, and its global palette updates when **Theme Studio · Live** is selected.
@@ -16,6 +16,18 @@ Manual edits and agent tools change the draft without changing the active pack. 
 In **Packs**, **Revert** restores the previous active pack and **Disable** turns off its extensions; **Revert** can restore the pack after disabling it. **Packs** also holds presets, your saved library, and JSON import and export. Draft undo and redo navigate draft edits, independently of the active pack.
 
 Presets, named library copies, and JSON import/export retain the pack's palette and UI settings. Presets and imported or loaded packs preserve locked color values. Manual and agent patches cannot change locked colors, and undo/redo refuses a change that would alter one. Revision checks prevent concurrent manual and agent edits from silently overwriting each other.
+
+## Create from an idea
+
+**Create** is the first inspector tab. Write an idea ("Spider-Man, comic ink"), pick moods, choose light or dark, and choose how many takes you want.
+
+Under the idea, **Spark** uses a small, fast model for instant help. Pause on an idea (or press **Spark it**) and it returns the idea finished as a one-sentence brief, a few short additions to tap, moods that fit, and three looks painted as miniatures; tapping a look applies its colors to the draft at once, with locked colors kept. **Surprise me** drops in a random idea and sparks it. **Live** turns the automatic answer on pause on or off. The model name beside it opens the **Quick model** picker, which lists the models of every provider available on the host and marks the fast ones; until you pick, Theme Studio uses a small model it finds (for example Haiku or Luna). Each answer is one short turn on that provider, run by a helper agent named "Theme spark" with no tools, beside the designer. Its palettes are checked and their text and accent adjusted until they are readable. The first answer takes longer while the helper starts; later ones take a few seconds.
+
+**Take from** borrows parts of packs you already have: colors from one, shape and density from another, type and tool cards from a third. **Mix into draft** applies that at once, without an agent; locked colors stay, and undo brings the previous look back.
+
+**Send to designer** sends the composed brief to the designer's chat, starting the designer if there is none, and you stay in the studio. The designer edits the same draft, so changes appear in the preview as it works; the top bar shows its real status. When you ask for more than one take, each is saved as a pack and listed under the brief: tap one to load it into the draft, or discard it. **Show brief** displays the exact message before you send it.
+
+Below the preview, **Point at** selects what a note is about: parts of the preview, any of the eight color swatches, or the card selected in **Cards**. Add a line and press **Send note**; the designer receives the note together with what you pointed at. The tray is hidden beside the designer's chat, where the chat itself does this.
 
 ## Save, favorite, and reuse packs
 
@@ -43,7 +55,7 @@ The same tab lists example prompts you can copy and holds **Connect your agents*
 
 For example, ask: "Make a compact pack with mono text, bordered tool cards, and a Notes panel containing a short checklist and a progress bar." The designer edits the same draft as the manual controls. You review the result and activate it yourself.
 
-For reusable UI, ask: "Create a native decision card with a select, a notes input, and a Confirm button. Publish it here, then handle my confirmation and return the result to the card." The designer can create a composition immediately or generate React Native code for you to build and activate. It can favorite saved packs and reusable components, and load a saved pack into the draft.
+For reusable UI, ask: "Design a custom decision card in the style of this pack, with a select, a notes input, and a Confirm button. After I activate it, publish it here, handle my confirmation, and return the result to the card." The designer writes a custom React Native component for you to build and activate. It can favorite saved packs and reusable components, and load a saved pack into the draft.
 
 The pack tools include `read_theme`, `read_capabilities`, `patch_pack`, `save_pack`, `create_variant`, `load_preset`, `check_contrast`, `undo`, `redo`, and `lock_color`. The compatible `patch_theme` tool also accepts UI patches. Library tools include `list_saved_packs`, `favorite_pack`, and `load_saved_pack`. Agents can add locks but cannot remove them. Neither packs nor generated-code builds have an agent activation tool.
 
@@ -61,16 +73,17 @@ Existing designers can also use component operations through `patch_theme` with 
 
 ## Component library
 
-In the studio's **Components** inspector, select a component to see it inside the preview conversation, rendered with your draft's colors exactly as it would appear in a real chat. Interactions there stay local. From the inspector you can favorite, reset, or delete it.
+In the studio's **Cards** inspector, each component is shown as a live miniature; the plus button adds it to the designer's chat as a real card. Select a component to see it inside the preview conversation, rendered with your draft's colors exactly as it would appear in a real chat. Interactions there stay local. From the inspector you can favorite, reset, or delete it.
 
 **Library** opens the full component view, which replaces the preview until **Back to studio**. It shows the latest version of each component, with search, favorites, source inspection, and version history. Agent-created components appear automatically. **New version** saves a separate definition; existing instances keep their original version. Component favorites are separate from saved pack favorites.
 
 **Delete** asks for confirmation, then removes every version of the component, its favorite flag, and its published instances; their chat rows say the component was deleted. Deletion is a manual UI action; agents have no delete tool.
 
-There are two creation paths:
+Every component is custom React Native source, written by an agent with `create_code_component` or pasted through **New custom component**. Saving validates its imports and types. **Build components** typechecks a versioned registry, which needs a development installation (see the README's limitations); **Activate components** explicitly loads the reviewed build and reloads Theme Studio. This rebuilds the plugin, not Paseo core.
 
-- **New composition** stores a validated native tree. Its nodes include text, stacks, rows, stats, lists, progress, buttons, inputs, selects, and toggles. It is available for preview and publication as soon as it is saved.
-- **New code component** stores a React Native TSX source file. Saving validates its imports and types. **Build components** typechecks a versioned registry, which needs a development installation (see the README's limitations); **Activate components** explicitly loads the reviewed build and reloads Theme Studio. This rebuilds the plugin, not Paseo core.
+A component is drawn in the chat and in the preview exactly as written. Theme Studio adds no frame, title, or padding around it, so its source owns the whole look; only a short status line appears beneath it while an interaction is being saved or handled.
+
+Earlier versions also had compositions, assembled from pre-made blocks. They are retired: they cannot be created, published, or triggered, and agents are not offered them. Ones already in a library stay listed as retired so their old chat rows keep rendering and you can delete them.
 
 Generated source and immutable definitions persist in the component library. Activation writes the versioned sources under `client/generated/` and their static imports in `client/generated-components.tsx`. Paseo bundles the plugin from its install directory, so that directory must be writable. The repository ships an empty registry, and each installation fills its own. Historical versions remain registered so earlier published rows can keep rendering their original components. Generated code is compiled, not evaluated from a runtime string.
 
@@ -97,6 +110,20 @@ export default function Confirmation({ theme, state, onAction }: ComponentProps)
 
 **Preview & source** runs interactions against local preview state only. It does not contact an agent. **Use in agent** publishes a new instance to an actual native chat, with optional initial state. Leave the target agent blank to use the designer session, or specify an existing owner agent. Publishing opens its chat when client navigation is available.
 
+## Live frames
+
+A live frame is HTML an agent writes on the spot and shows in its own chat with `show_live({ title, html, state?, height?, summary? })`. There is no library entry, build, or activation: the frame appears at once. Agents are told to use it when seeing or trying something beats reading it, such as a chart, a comparison, a simulator, a calculator, or a small editor.
+
+Frames run on Paseo web and desktop only. On iOS and Android the chat shows the frame's title and summary with a note to open the conversation on web or desktop, because plugins cannot render HTML there.
+
+The HTML is treated as untrusted. It runs in an iframe with `sandbox="allow-scripts"` only, so it has an opaque origin with no storage, no access to Paseo's page, and no popups, forms, or top-level navigation. The document always begins with Paseo's own HTML-preview Content-Security-Policy, placed before any of the agent's markup, so there is no network: no fetch, no remote scripts, images, or fonts. As in Paseo's file preview, a frame can still navigate itself; the opaque origin bounds what that can carry.
+
+The frame and Theme Studio talk only through `postMessage`. Theme Studio ignores any message whose source is not that frame's own window, validates every message, rejects anything over 16,000 characters, and rate-limits each kind. Only four messages exist, in MCP Apps (`ui/`) shapes where one exists: `ui/notifications/size-changed` (the frame grows to its content, up to 720 px), `paseo/state` (saved as the frame's state), `ui/message` (an action, delivered to the agent as a widget event that is labelled as coming from the frame, never as typed text), and `ui/initialize`. Theme Studio sends the theme (`ui/notifications/host-context-changed`) and state updates (`paseo/state`). At most six frames run at once; older ones pause to a button that resumes them.
+
+Each frame gets the active theme as CSS variables and a small stylesheet that makes plain HTML look native, plus a kit inlined into the document: Preact with htm, a `live` object (`state`, `setState`, `action`, `on`, `useLive`, `useTheme`), and two SVG charts (`live.chart.bar`, `live.chart.line`). The kit is about 24 KB and is built into `client/live-kit.ts` by `pnpm build:live-kit`. An agent answers an action with `update_component_state` on the frame's instance; the running frame receives the new state without reloading. Theme changes repaint frames live.
+
+Agent HTML is limited to 120,000 characters and state to 12,000. Frames are stored with the conversation like other cards and appear in **Storage** as "Live frames".
+
 ## Agent-managed component interactions
 
 The installer controls agent connections in **Theme Studio → Components → Connect your agents**. The connection is off by default. **Connect new agents** adds the MCP, component instructions, and its tool permissions to subsequently created Codex, Claude Code, and OpenCode interactive agents on this host. Providers without verified MCP support are preserved. It preserves their task instructions, provider, model, environment, other MCP servers, and other tool permissions. Internal agents and explicit conflicting `theme-studio` servers are preserved. Disconnecting stops future injection; already created agents retain their configuration. The dedicated designer continues to include its own MCP independently.
@@ -114,9 +141,9 @@ Component state and events persist on the daemon. A component emits `onAction({ 
 3. The owning agent reads the current instance and definition, decides what the chosen option means for its task, and calls `update_component_state` with progress and the complete next state. Technical transport messages are hidden from the native chat only when their native message ID and full immutable payload match a uniquely owned persisted event. Canonical agent context stays intact. Normal user messages and pasted event text keep their normal rendering.
 4. The native row displays the updated state. An agent state update creates no event and starts no additional turn, so it does not create an automatic interaction loop.
 
-The component MCP tools are `list_components`, `list_component_triggers`, `trigger_component`, `create_composition`, `create_code_component`, `build_components`, `publish_component`, `read_component_instance`, `update_component_state`, and `favorite_component`. Compositions can be published immediately. Generated code must first be manually activated in Components.
+The component MCP tools are `list_components`, `list_component_triggers`, `trigger_component`, `create_code_component`, `build_components`, `publish_component`, `read_component_instance`, `update_component_state`, and `favorite_component`. A component must first be manually activated in the library.
 
-Each component version can store up to ten trigger rules. Add them in **Component triggers** when creating a component or a new version, or have the agent include `triggers` in `create_composition` / `create_code_component`. A rule belongs to that component; the plugin does not supply a default decision card. For example:
+Each component version can store up to ten trigger rules. Add them in **Component triggers** when creating a component or a new version, or have the agent include `triggers` in `create_code_component`. A rule belongs to that component; the plugin does not supply a default decision card. For example:
 
 ```json
 [{"id":"review-results","event":"turn_completed","when":"Before returning a comparison of database options, show the comparison review panel.","enabled":true}]
@@ -137,7 +164,11 @@ Connected agents receive discovery instructions and an MCP initialization catalo
 
 **Automatic component triggers** is an independent installer setting in **Connect your agents**. It defaults on for connected agents; MCP connections still default off. Turning automatic triggers off rejects automatic publication while keeping manual `publish_component` available. Empty rules mean manual placement. Creating a new version without a `triggers` argument inherits the previous version's rules; explicit `[]` clears them on the new version. Existing instances keep their original version and rules.
 
-The current library allows 200 immutable definitions and 500 persisted instances per host. Trigger reuse does not consume another instance. Instances are not automatically pruned, so separate turns and occurrences count toward that limit.
+Component storage has no limit. Definitions, favorites, and builds live in `components.json`; published cards live in `component-instances/`, one file per owning conversation, so a card costs its own conversation a small write and nothing else. Trigger reuse does not create another instance. Cards are removed automatically only when their conversation is deleted from Paseo.
+
+**Storage** (the drive button in the top bar) shows how much disk Theme Studio uses on the host, split by kind, with the number of cards per component. From there you can clear the cards of one component, cards older than 30 or 90 days, or cards left by deleted conversations. Clearing is always a manual action; a cleared card's chat row says the card was removed, and cards with an interaction the agent has not received yet are kept.
+
+Through `list_components` an agent receives the catalog, per-component card totals, and its own twenty most recent cards. Publishing or updating a card does not advance the library revision, so a revision read earlier stays valid while cards are published elsewhere.
 
 Revision scopes are separate. Read the corresponding resource before a mutation, and reread after a conflict to preserve later user input:
 
@@ -162,7 +193,7 @@ The activity panel reads native workspace status and diff counts. A custom works
 - `list` for a title and text items.
 - `progress` for a label and a value between 0 and 100.
 
-The pack panel builder stores declarative data. It accepts no scripts, HTML, CSS, or custom event handlers. Interactive compositions and generated React Native components use the separate Components library. Packs and components do not modify Paseo core files. Native animations, semantic status colors, syntax highlighting, terminal ANSI colors, and global layout remain controlled by Paseo.
+The pack panel builder stores declarative data. It accepts no scripts, HTML, CSS, or custom event handlers. Interactive custom components use the separate component library. Packs and components do not modify Paseo core files. Native animations, semantic status colors, syntax highlighting, terminal ANSI colors, and global layout remain controlled by Paseo.
 
 The preview uses representative content and the public theme mappings from Paseo 0.9.2. Platform fonts, window sizes, and later Paseo versions can change its visual match.
 

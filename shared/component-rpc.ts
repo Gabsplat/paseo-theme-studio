@@ -8,6 +8,7 @@ import {
   componentLibrarySchema,
   componentNodeSchema,
   componentStateSchema,
+  componentStorageSchema,
   componentBuildSchema,
   componentTriggersSchema,
 } from "./components";
@@ -44,12 +45,27 @@ export const readComponentLibrary = defineRpc({
   input: z.object({}),
   output: componentLibrarySchema,
 });
-const created = z.object({ library: componentLibrarySchema, definition: componentDefinitionSchema });
-export const createComposition = defineRpc({
-  name: "component.create-composition",
-  input: componentCreateSchema,
-  output: created,
+/** Instances the user interacted with. Polled in the background, so it carries no definitions. */
+export const readComponentEvents = defineRpc({
+  name: "component.events",
+  input: z.object({}),
+  output: z.object({ instances: z.array(componentInstanceSchema) }),
 });
+export const readComponentStorage = defineRpc({
+  name: "component.storage",
+  input: z.object({}),
+  output: componentStorageSchema,
+});
+export const clearComponentInstances = defineRpc({
+  name: "component.clear-instances",
+  input: z.discriminatedUnion("scope", [
+    z.object({ scope: z.literal("closed-conversations") }).strict(),
+    z.object({ scope: z.literal("older"), days: z.number().int().min(1).max(3650) }).strict(),
+    z.object({ scope: z.literal("component"), componentId: componentIdSchema }).strict(),
+  ]),
+  output: z.object({ removed: z.number().int().nonnegative(), storage: componentStorageSchema }),
+});
+const created = z.object({ library: componentLibrarySchema, definition: componentDefinitionSchema });
 export const createCodeComponent = defineRpc({
   name: "component.create-code",
   input: componentCodeSchema,
@@ -85,9 +101,14 @@ export const activateComponentBuild = defineRpc({
     expectedRevision: z.number().int().nonnegative(),
     buildId: z.string(),
     // Keys whose full source the user reviewed in the activation dialog.
-    reviewedKeys: z.array(z.string()).max(500),
+    reviewedKeys: z.array(z.string()),
   }),
   output: z.object({ library: componentLibrarySchema, reloadRequired: z.literal(true) }),
+});
+export const readLiveInstance = defineRpc({
+  name: "live.instance",
+  input: z.object({ instanceId: z.string() }),
+  output: componentInstanceSchema,
 });
 export const publishComponent = defineRpc({
   name: "component.publish",

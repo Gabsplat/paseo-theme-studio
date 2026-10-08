@@ -186,8 +186,11 @@ test("concurrent trigger retries reuse one pinned instance without replacing use
   const instance = results[0].instance;
   assert.equal(instance.trigger?.occurrenceKey, "default");
   assert.equal((await service.read()).instances.length, 1);
-  assert.equal((await service.read()).revision, created.library.revision + 1);
+  // Publishing a card writes only its conversation's file; the catalog revision stays put.
+  assert.equal((await service.read()).revision, created.library.revision);
   const updated = await service.updateInstance({ instanceId: instance.id, expectedRevision: 0, state: { count: 8 } });
+  // A catalog change makes the trigger's revision stale; the retry still finds its instance.
+  await service.setFavorite({ expectedRevision: created.library.revision, id: input.componentId, favorite: true });
   const before = (await service.read()).revision;
   const retry = await service.createInstance({ ...input, state: { count: 999 } });
   assert.equal(retry.reused, true);
@@ -234,7 +237,7 @@ test("reloaded provider turn IDs remain separate by the real turn start, includi
   assert.equal(retried[0].instance.trigger?.turnStartedAt, nextInput.trigger.turnStartedAt);
   const restored = await new ComponentService(service.directory, async () => project).read();
   assert.equal(restored.instances.length, 2);
-  assert.equal(restored.revision, first.library.revision + 1);
+  assert.equal(restored.revision, first.library.revision);
   assert.deepEqual(restored.instances[0], first.instance);
 });
 
@@ -387,14 +390,14 @@ test("composition versions and favorites persist independently of their instance
   });
   assert.equal(second.definition.version, 2);
   assert.deepEqual(second.library.definitions[0], first.definition);
-  assert.equal(second.library.instances[0].componentVersion, 1);
+  assert.equal((await service.read()).instances[0].componentVersion, 1);
   const favorite = await service.setFavorite({
     expectedRevision: second.library.revision,
     id: "checklist",
     favorite: true,
   });
   assert.deepEqual(favorite.favorites, ["checklist"]);
-  assert.deepEqual(await new ComponentService(service.directory, async () => repository).read(), favorite);
+  assert.deepEqual(await new ComponentService(service.directory, async () => repository).catalog(), favorite);
   assert.equal((await stat(service.file)).mode & 0o777, 0o600);
 });
 
@@ -436,7 +439,7 @@ test("concurrent library and instance updates reject stale revisions without los
   const marked = await service.markDispatched({ instanceId: instance.id, eventId: instance.events[0].id });
   assert.ok(marked.events[0].dispatchedAt);
   assert.deepEqual(await service.markDispatched({ instanceId: instance.id, eventId: instance.events[0].id }), marked);
-  assert.equal((await service.read()).revision, beforeDispatch + 1);
+  assert.equal((await service.read()).revision, beforeDispatch);
 });
 
 test("bounded composition validates interactive data and rejects recursion, unsafe IDs, and corrupt storage", async t => {
@@ -657,4 +660,103 @@ test("deleting a component removes all versions, favorites, instances, and stale
     service.deleteComponent({ expectedRevision: deleted.library.revision, id: "old-card" }),
     /not found/,
   );
+});
+
+test("instances have no limit, live in one file per conversation, and never rewrite the catalog", async t => {
+  const { service } = await fixture(t);
+  const created = await service.createComposition({ expectedRevision: 0, id: "card", name: "Card", tree });
+  const catalogBefore = await readFile(service.file, "utf8");
+  for (let index = 0; index < 520; index++)
+    await service.createInstance({
+      expectedRevision: created.library.revision,
+      componentId: "card",
+      agentId: `agent-${index % 4}`,
+      state: { index },
+    });
+  assert.equal(await readFile(service.file, "utf8"), catalogBefore);
+  const library = await service.read();
+  assert.equal(library.instances.length, 520);
+  assert.equal(library.revision, created.library.revision);
+  assert.equal((await service.catalog()).instances.length, 0);
+  assert.equal((await service.agentInstances("agent-1")).length, 130);
+  assert.deepEqual((await service.instanceAgents()).sort(), ["agent-0", "agent-1", "agent-2", "agent-3"]);
+  assert.deepEqual((await service.view(await service.catalog())).instanceCounts, { card: 520 });
+  // A second service on the same directory sees the same data and can address any instance.
+  const other = new ComponentService(service.directory, async () => process.cwd());
+  const target = library.instances[300];
+  const updated = await other.updateInstance({ instanceId: target.id, expectedRevision: 0, state: { done: true } });
+  assert.deepEqual((await service.readInstance(target.id)).state, updated.state);
+  await other.close();
+});
+
+test("a legacy library moves its instances out of the catalog without losing or duplicating them", async t => {
+  const { service } = await fixture(t);
+  const created = await service.createComposition({ expectedRevision: 0, id: "card", name: "Card", tree });
+  const legacy = JSON.parse(await readFile(service.file, "utf8"));
+  legacy.instances = Array.from({ length: 500 }, (_, index) => ({
+    id: `legacy-${String(index).padStart(3, "0")}`,
+    componentId: "card",
+    componentVersion: 1,
+    agentId: index % 2 ? "agent/odd" : "agent-even",
+    state: { index },
+    revision: 0,
+    events: [],
+    createdAt: new Date(Date.UTC(2026, 9, 1, 0, 0, index)).toISOString(),
+  }));
+  await writeFile(service.file, JSON.stringify(legacy));
+  const restarted = new ComponentService(service.directory, async () => process.cwd());
+  const library = await restarted.read();
+  assert.equal(library.instances.length, 500);
+  assert.equal(library.revision, created.library.revision);
+  assert.equal(library.instances[499].id, "legacy-499");
+  assert.equal(JSON.parse(await readFile(service.file, "utf8")).instances.length, 0);
+  // The cap that used to block publication is gone.
+  const next = await restarted.createInstance({
+    expectedRevision: library.revision,
+    componentId: "card",
+    agentId: "agent/odd",
+  });
+  assert.equal((await restarted.agentInstances("agent/odd")).length, 251);
+  assert.equal((await restarted.readInstance(next.instance.id)).agentId, "agent/odd");
+  await restarted.close();
+});
+
+test("storage reports usage and clears cards only on request, keeping undelivered interactions", async t => {
+  const { service } = await fixture(t);
+  const created = await service.createComposition({ expectedRevision: 0, id: "card", name: "Card", tree });
+  const other = await service.createComposition({
+    expectedRevision: created.library.revision,
+    id: "other",
+    name: "Other",
+    tree,
+  });
+  const revision = other.library.revision;
+  const publish = (componentId: string, agentId: string) =>
+    service.createInstance({ expectedRevision: revision, componentId, agentId });
+  const waiting = (await publish("card", "one")).instance;
+  await publish("card", "one");
+  await publish("card", "two");
+  const kept = (await publish("other", "two")).instance;
+  await service.interact({ instanceId: waiting.id, expectedRevision: 0, action: { action: "review" } });
+  assert.deepEqual(await service.pendingOwners(), ["one"]);
+  assert.deepEqual(
+    (await service.interactedInstances()).map(instance => instance.id),
+    [waiting.id],
+  );
+  const usage = await service.storage();
+  assert.equal(usage.instances, 4);
+  assert.equal(usage.conversations, 2);
+  assert.deepEqual(usage.components.map(item => [item.id, item.instances]).sort(), [
+    ["card", 3],
+    ["other", 1],
+  ]);
+  assert.ok(usage.totalBytes >= usage.parts.find(part => part.id === "instances")!.bytes);
+  assert.equal(
+    usage.parts.reduce((sum, part) => sum + part.bytes, 0),
+    usage.totalBytes,
+  );
+  assert.equal(await service.clearInstances({ before: "2000-01-01T00:00:00.000Z" }), 0);
+  assert.equal(await service.clearInstances({ componentId: "card" }), 2);
+  assert.deepEqual((await service.read()).instances.map(instance => instance.id).sort(), [waiting.id, kept.id].sort());
+  assert.equal((await service.read()).revision, revision);
 });

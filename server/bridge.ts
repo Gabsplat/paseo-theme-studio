@@ -219,12 +219,12 @@ export class ThemeBridge {
             "trigger_component",
             "list_components",
             "read_component_instance",
-            "create_composition",
             "create_code_component",
             "build_components",
             "publish_component",
             "update_component_state",
             "favorite_component",
+            "show_live",
           ].includes(name)
         )
           return this.componentCall(name, input, caller);

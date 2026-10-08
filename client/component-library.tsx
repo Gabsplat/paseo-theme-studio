@@ -9,7 +9,6 @@ import {
   activateComponentBuild,
   buildComponents,
   createCodeComponent,
-  createComposition,
   favoriteComponent,
   publishComponent,
   readComponentLibrary,
@@ -168,7 +167,7 @@ function ComponentTile({
       </View>
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
-          {definition.mode === "composition" ? "Native composition" : "Generated React Native"}
+          {definition.mode === "composition" ? "Retired block composition" : "Custom component"}
         </Text>
         <View style={{ flexDirection: "row", gap: 5, alignItems: "center" }}>
           <View
@@ -180,7 +179,7 @@ function ComponentTile({
             }}
           />
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
-            {active ? "Ready to use" : "Build and activate"}
+            {active ? "Ready to use" : definition.mode === "composition" ? "Not usable" : "Build and activate"}
           </Text>
         </View>
       </View>
@@ -195,7 +194,14 @@ function ComponentTile({
           disabled={disabled || !active}
           onPress={onPublish}
         />
-        <StudioButton theme={theme} title="New version" icon="Plus" small disabled={disabled} onPress={onVersion} />
+        <StudioButton
+          theme={theme}
+          title="New version"
+          icon="Plus"
+          small
+          disabled={disabled || definition.mode !== "code"}
+          onPress={onVersion}
+        />
         <StudioButton theme={theme} title="Versions" icon="History" small onPress={onHistory} />
         <StudioButton
           theme={theme}
@@ -216,7 +222,6 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
   const { theme, layout, host } = props;
   const queryClient = useQueryClient();
   const readLibrary = useRpc(readComponentLibrary);
-  const createTree = useRpc(createComposition);
   const createCode = useRpc(createCodeComponent);
   const favorite = useRpc(favoriteComponent);
   const build = useRpc(buildComponents);
@@ -240,7 +245,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [selected, setSelected] = useState<ComponentDefinition | null>(null);
   const [inspectTab, setInspectTab] = useState<"preview" | "source">("preview");
-  const [mode, setMode] = useState<ComponentMode>("composition");
+  const [mode, setMode] = useState<ComponentMode>("code");
   const [name, setName] = useState("");
   const [id, setId] = useState("");
   const [source, setSource] = useState("");
@@ -279,17 +284,6 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
     setError(errorMessage(reason));
     void query.refetch();
   }
-  const creatingTree = useMutation({
-    mutationFn: createTree,
-    onError: report,
-    onSuccess: result => {
-      acceptLibrary(result.library);
-      setDialog(null);
-      setNotice(
-        `${result.definition.name} v${result.definition.version} saved. It is ready to preview and use in an agent.`,
-      );
-    },
-  });
   const creatingCode = useMutation({
     mutationFn: createCode,
     onError: report,
@@ -334,12 +328,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
     },
   });
   const busy =
-    creatingTree.isPending ||
-    creatingCode.isPending ||
-    starring.isPending ||
-    building.isPending ||
-    activating.isPending ||
-    publishing.isPending;
+    creatingCode.isPending || starring.isPending || building.isPending || activating.isPending || publishing.isPending;
   const codeDefinitions = library?.definitions.filter(definition => definition.mode === "code") ?? [];
   const pendingCode = codeDefinitions.filter(definition => !library?.activeKeys.includes(definitionKey(definition)));
   const latestBuild = library?.builds.at(-1);
@@ -365,8 +354,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
         Number(library?.favorites.includes(b.id)) - Number(library?.favorites.includes(a.id)) ||
         b.createdAt.localeCompare(a.createdAt),
     );
-  const selectedReady =
-    selected?.mode === "composition" || Boolean(selected && library?.activeKeys.includes(definitionKey(selected)));
+  const selectedReady = selected?.mode === "code" && Boolean(library?.activeKeys.includes(definitionKey(selected)));
   const CompiledPreview = selected?.mode === "code" ? generatedComponents[definitionKey(selected)] : null;
   const formChanged = formRevision !== library?.revision;
   const inputStyle = {
@@ -459,11 +447,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
       creatingCode.mutate({ ...base, code: source });
       return;
     }
-    try {
-      creatingTree.mutate({ ...base, tree: parseComponentTree(JSON.parse(source)) });
-    } catch (reason) {
-      setError(`The composition must be a valid native component tree. ${errorMessage(reason)}`);
-    }
+    setError("Pre-made block compositions are retired. Ask the designer for a custom component instead.");
   }
   function publishSelected() {
     if (!selected) return;
@@ -503,7 +487,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
               <Text style={{ color: theme.colors.foreground, fontSize: 20, fontWeight: "600" }}>Component library</Text>
               {!compact ? (
                 <StudioLabel theme={theme} subdued>
-                  Reusable native UI for your agents. Save versions, preview, and publish.
+                  Custom UI your agents designed. Save versions, preview, and publish.
                 </StudioLabel>
               ) : null}
             </View>
@@ -511,15 +495,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
           <View style={{ flexDirection: "row", gap: 7, flexWrap: "wrap" }}>
             <StudioButton
               theme={theme}
-              title="New composition"
-              icon="Plus"
-              small
-              disabled={!library || busy}
-              onPress={() => openCreate("composition")}
-            />
-            <StudioButton
-              theme={theme}
-              title="New code component"
+              title="New custom component"
               icon="Code2"
               small
               disabled={!library || busy}
@@ -731,7 +707,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
                     theme={theme}
                     definition={definition}
                     favorite={library.favorites.includes(definition.id)}
-                    active={definition.mode === "composition" || library.activeKeys.includes(definitionKey(definition))}
+                    active={definition.mode === "code" && library.activeKeys.includes(definitionKey(definition))}
                     disabled={busy}
                     onFavorite={() =>
                       starring.mutate({
@@ -758,7 +734,7 @@ export function ComponentLibrarySurface(props: ComponentLibraryProps) {
                 description={
                   search.trim() || favoritesOnly
                     ? "Clear the search or show all components to see the rest of your library."
-                    : "Create a native composition, paste React Native source, or ask the designer agent to make one. New components appear here automatically."
+                    : "Ask the designer to design a component, or paste React Native source. New components appear here automatically."
                 }
               >
                 {search.trim() || favoritesOnly ? (

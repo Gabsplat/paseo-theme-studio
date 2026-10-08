@@ -14,7 +14,7 @@ The Designer button creates a normal Paseo agent with a set of Theme Studio tool
 
 ## Components in agent chats
 
-Agents can place interactive cards in their own chat: buttons, inputs, selects, toggles, lists, and progress bars. Pressing a button sends the event to the agent that owns the card, and the agent writes the result back. A card can carry a rule such as "after a command fails, show this", which connected agents check on their own.
+Agents can place interactive cards in their own chat. Each one is custom, designed by an agent for the job, and appears exactly as designed with no frame around it. Pressing a button sends the event to the agent that owns the card, and the agent writes the result back. A card can carry a rule such as "after a command fails, show this", which connected agents check on their own.
 
 Only the designer has these tools by default. "Connect your agents" is off until you turn it on. When on, it adds the Theme Studio tool server, its instructions, and its tool permissions to agents created afterwards on that host. Existing agents are left alone.
 
