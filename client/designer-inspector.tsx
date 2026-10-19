@@ -29,7 +29,8 @@ export const examplePrompts = [
 /** The provider and model a new designer session will use. */
 export function nextDesignerConfig(preferences: StudioPreferences | undefined) {
   const provider = preferences?.designerProvider || defaultDesignerProvider;
-  return { provider, model: preferences?.designerModel || defaultDesignerModel(provider) };
+  // Without a choice the host resolves the provider's current default model.
+  return { provider, ...(preferences?.designerModel ? { model: preferences.designerModel } : {}) };
 }
 
 function Row({ theme, label, value }: { theme: PluginTheme; label: string; value: string }) {
@@ -156,8 +157,17 @@ export function DesignerInspector({
   });
   // An empty choice falls back to Theme Studio's default for the provider, which may be a specific model.
   const fallbackModel = defaultDesignerModel(next.provider);
+  const reportedDefault = (models.data ?? []).find(model => model.isDefault)?.label;
   const modelOptions = [
-    { value: "", label: fallbackModel === "default" ? "Provider default" : `Default (${fallbackModel})` },
+    {
+      value: "",
+      label:
+        fallbackModel !== "default"
+          ? `Default (${fallbackModel})`
+          : reportedDefault
+            ? `Provider default (${reportedDefault})`
+            : "Provider default",
+    },
     ...(models.data ?? []).map(model => ({
       value: model.id,
       label: model.label,

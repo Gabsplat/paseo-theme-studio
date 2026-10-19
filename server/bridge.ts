@@ -3,6 +3,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import type { StudioDocument } from "../shared/theme";
 import { makeBridgeSource } from "./bridge-source";
 import { contrastReport } from "./contrast";
 import { RevisionConflict, StudioStore } from "./store";
@@ -39,6 +40,66 @@ export function bridgeErrorStatus(error: unknown): number {
   // Other errors are deliberate rejections with a user-facing message, such as a locked color.
   if (error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError) return 500;
   return error instanceof Error ? 422 : 500;
+}
+
+/**
+ * What read_theme returns. It stays small enough for an agent to read inline: the full
+ * history and saved packs made it ~180,000 characters, which Claude Code spills to a file
+ * and then needs the user's permission to read. Details live in list_saved_packs and
+ * read_capabilities.
+ */
+function isStudioDocument(value: unknown): value is StudioDocument {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    "history" in value &&
+    "current" in value &&
+    "saved" in value &&
+    "cursor" in value,
+  );
+}
+
+export function compactTheme(document: StudioDocument) {
+  const {
+    tools: _tools,
+    componentTreeSchema: _tree,
+    presets,
+    ...rest
+  } = capabilities() as Record<string, unknown> & {
+    presets?: { id: string; name: string; appearance?: string }[];
+  };
+  const recent = document.history.slice(-10);
+  return {
+    version: document.version,
+    revision: document.revision,
+    current: document.current,
+    locks: document.locks,
+    active: document.active ? { id: document.active.id, name: document.active.name } : null,
+    cursor: document.cursor,
+    history: {
+      total: document.history.length,
+      recent: recent.map((entry, index) => ({
+        index: document.history.length - recent.length + index,
+        label: entry.label,
+        source: entry.source,
+        at: entry.at,
+      })),
+    },
+    saved: document.saved.map(pack => ({
+      id: pack.id,
+      name: pack.name,
+      appearance: pack.appearance,
+      favorite: document.favorites.includes(pack.id),
+    })),
+    takes: document.takes.map(take => ({ id: take.id, name: take.name, appearance: take.appearance })),
+    designerAgentId: document.designerAgentId,
+    capabilities: {
+      ...rest,
+      presets: (presets ?? []).map(preset => ({ id: preset.id, name: preset.name, appearance: preset.appearance })),
+      details:
+        "Full tool contracts, presets, and the UI schema are in read_capabilities; full saved packs in list_saved_packs.",
+    },
+  };
 }
 
 export class ThemeBridge {
@@ -107,7 +168,9 @@ export class ThemeBridge {
       const input = z.object({ name: z.string(), arguments: z.unknown() }).strict().parse(JSON.parse(body));
       const header = request.headers[callerHeader];
       const caller = typeof header === "string" && agentIdPattern.test(header) ? header : undefined;
-      send(200, await this.call(input.name, input.arguments, caller));
+      const result = await this.call(input.name, input.arguments, caller);
+      // Every studio document an agent receives is compacted, not only read_theme's.
+      send(200, isStudioDocument(result) ? compactTheme(result) : result);
     } catch (error) {
       const status = bridgeErrorStatus(error);
       if (status === 500) console.error("Theme Studio tool failed:", error);
@@ -119,7 +182,7 @@ export class ThemeBridge {
     switch (name) {
       case "read_theme":
         z.object({}).strict().parse(input);
-        return { ...(await this.store.read()), capabilities: capabilities() };
+        return this.store.read();
       case "read_capabilities":
         z.object({}).strict().parse(input);
         return capabilities();

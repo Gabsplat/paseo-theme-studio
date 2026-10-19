@@ -3,7 +3,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } fr
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import type { StudioTheme } from "../shared/theme";
 import { previewColors, previewPluginTheme, type PreviewColors } from "./preview-colors";
-import { PackToolCard, PackNote, RecipePanel, packMetrics } from "./pack-runtime";
+import { PackToolCard, PackNote, packMetrics } from "./pack-runtime";
 
 // A faithful, interactive miniature of Paseo 0.10's desktop layout, painted with the draft pack.
 export type PreviewScene = "chat" | "changes" | "terminal" | "panel";
@@ -675,8 +675,8 @@ function Chat({
 }
 
 function Explorer({ c, pack }: ColorProps & { pack: StudioTheme }) {
-  const title = pack.ui.panel.enabled ? pack.ui.panel.title : "Pack activity";
-  const icon = pack.ui.panel.enabled ? pack.ui.panel.icon : "Activity";
+  const title = "Pack activity";
+  const icon = "Activity";
   return (
     <View style={[s.explorer, { borderLeftColor: c.border, backgroundColor: c.workspace }]}>
       <View style={[s.tabs, { borderBottomColor: c.border, paddingHorizontal: 6 }]}>
@@ -718,7 +718,7 @@ export function PaseoPreview({
   const [width, setWidth] = useState(900);
   const [session, setSession] = useState("Navigation review");
   const narrow = compact || width < 560;
-  const hasPanel = theme.ui.activityPanel || theme.ui.panel.enabled;
+  const hasPanel = theme.ui.activityPanel;
   // Wide previews show the pack panel where Paseo shows it: the explorer beside the chat.
   const explorer = hasPanel && width >= 980;
   useEffect(() => {
@@ -740,8 +740,8 @@ export function PaseoPreview({
           onSelect={setActive}
           title={session}
           showPanelTab={hasPanel && !explorer}
-          panelTitle={theme.ui.panel.enabled ? theme.ui.panel.title : "Pack activity"}
-          panelIcon={theme.ui.panel.enabled ? theme.ui.panel.icon : "Activity"}
+          panelTitle={"Pack activity"}
+          panelIcon={"Activity"}
         />
         <View style={[s.flex, { backgroundColor: c.workspace }]}>
           {active === "chat" ? (
@@ -805,7 +805,6 @@ export function PreviewActivity({ pack }: { pack: StudioTheme }) {
           <PackNote theme={theme} pack={pack} text="Navigation review · idle · Sonnet 4.6" />
         </View>
       )}
-      <RecipePanel theme={theme} pack={pack} />
     </ScrollView>
   );
 }

@@ -28,7 +28,9 @@ export function StudioButton({
   iconOnly?: boolean;
 }) {
   const color = primary
-    ? theme.colors.accentForeground
+    ? disabled
+      ? theme.colors.foregroundMuted
+      : theme.colors.accentForeground
     : danger
       ? theme.colors.statusDanger
       : active
@@ -51,13 +53,15 @@ export function StudioButton({
         minHeight: small ? 30 : 34,
         borderRadius: 8,
         backgroundColor: primary
-          ? theme.colors.accent
+          ? disabled
+            ? theme.colors.surface2
+            : theme.colors.accent
           : active
             ? theme.colors.surface2
             : pressed
               ? theme.colors.surface2
               : "transparent",
-        opacity: disabled ? 0.4 : pressed ? 0.8 : 1,
+        opacity: disabled ? (primary ? 1 : 0.4) : pressed ? 0.8 : 1,
         borderWidth: primary || active ? 0 : 1,
         borderColor: theme.colors.border,
       })}

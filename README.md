@@ -12,7 +12,7 @@ Design how [Paseo](https://paseo.sh) looks without leaving Paseo. Theme Studio i
 
 - **A live preview.** A working replica of Paseo's sidebar, chat, tool rows, terminal, and composer, on desktop and mobile, painted with your draft.
 - **60 starting palettes.** Five built in, plus 55 adapted from the community gallery at [T3 Themes](https://t3themes.com), each credited to its author. Filter by light or dark and load one into the draft.
-- **Packs, not just colors.** A pack combines the eight appearance colors with density, corner radius, typography, tool-card style, and custom workspace panels.
+- **Packs, not just colors.** A pack combines the eight appearance colors with density, corner radius, typography, tool-card style, and an activity panel.
 - **A designer agent.** Ask for "a compact pack with mono text and bordered tool cards" and a real Paseo agent edits the draft through MCP tools. You review and activate.
 - **Native chat components.** Agents can publish interactive cards (buttons, inputs, selects, progress) inside their own chat, and react to what you press.
 - **Nothing changes until you say so.** Edits go to a draft. Only **Activate** applies it, and **Revert** brings the previous pack back.
@@ -23,7 +23,7 @@ Design how [Paseo](https://paseo.sh) looks without leaving Paseo. Theme Studio i
 
 ## Install
 
-Requires Paseo 0.9.2 through 0.11.x, including the 0.11 betas, with plugins enabled, and Node.js on the daemon host.
+Requires Paseo 0.9.2 through 0.12.x, including their betas, with plugins enabled, and Node.js on the daemon host.
 
 ```sh
 paseo plugin install paseo-theme-studio
@@ -44,9 +44,9 @@ paseo plugin install "$PWD"
 
 ## Quick start
 
-1. In **Create**, type an idea: a quick model you choose finishes it and paints three looks you can apply with a tap. Send the brief to the designer for full takes, or mix parts of existing packs into the draft. Or open **Packs** and load a starting palette.
+1. In **Create**, remix the current theme or start from an idea, and the designer returns takes you can try, remix again, or discard. Or open **Packs** and load a starting palette.
 2. In **Colors**, adjust the eight colors. Lock the ones you want to keep; presets, undo, and the designer leave locked colors alone. The contrast summary flags unreadable pairs.
-3. In **Design**, pick density, radius, fonts, tool-card style, and workspace panels.
+3. In **Design**, pick density, radius, fonts, tool-card style, and the activity panel. Hover a swatch under the preview to see where that color paints.
 4. Press **Activate**. The status next to the pack name shows whether the draft is live.
 5. **Save pack** keeps a named copy in your library. Star it to mark it as a favorite.
 
@@ -77,7 +77,7 @@ Agents can also show a **live frame**: interactive HTML they write on the spot, 
 - Code components and pack export typecheck generated source against React Native and the Paseo plugin SDK. Paseo installs plugins without development dependencies, so these two features need the checkout install above. Everything else works from any install.
 - Activated code components are written into the plugin's own directory, so a plugin update removes them. Their definitions stay in your library; build and activate them again.
 - Code components are trusted code running inside the plugin. The import checks are a filter, not a sandbox, which is why activation requires reviewing the source.
-- Packs style the palette, pack-owned components, completed shell tool cards, and workspace panels. Native chat messages, syntax highlighting, terminal ANSI colors, and Paseo's global layout stay under Paseo's control.
+- Packs style the palette, pack-owned components, completed shell tool cards, and the activity panel. Native chat messages, syntax highlighting, terminal ANSI colors, and Paseo's global layout stay under Paseo's control.
 - The preview replicates Paseo 0.9.2. Later versions can drift from it visually.
 - Tested on Linux daemons with the web and macOS clients. Windows is untested.
 

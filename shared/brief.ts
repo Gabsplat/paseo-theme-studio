@@ -12,21 +12,6 @@ export const briefMoods = [
   "Comic ink",
   "Cinematic",
 ] as const;
-export const briefExtras = [
-  { id: "card", label: "A matching chat card", prompt: "Also create one native chat card that fits this look." },
-  {
-    id: "panel",
-    label: "A workspace panel",
-    prompt: "Add a workspace panel with a short checklist and a progress bar that suit the theme.",
-  },
-  {
-    id: "contrast",
-    label: "Check contrast",
-    prompt: "Run check_contrast and fix any text pair under 4.5:1 before you finish.",
-  },
-] as const;
-export type BriefExtra = (typeof briefExtras)[number]["id"];
-
 /** Which part of a pack a mix slot borrows. */
 export const mixSlots = [
   { id: "colors", label: "Colors", detail: "All eight palette colors and light or dark." },
@@ -37,15 +22,24 @@ export type MixSlot = (typeof mixSlots)[number]["id"];
 export type Mix = Partial<Record<MixSlot, StudioTheme>>;
 
 export type Brief = {
+  /** "remix" asks the designer to start from the pack in the draft instead of a blank page. */
+  mode: "new" | "remix";
+  /** The name of the pack being remixed, shown to the designer. */
+  remixName?: string;
   subject: string;
   appearance: "any" | "dark" | "light";
   moods: readonly string[];
   mix: Mix;
-  extras: readonly BriefExtra[];
   variants: number;
   /** Things the user pointed at in the preview, such as "accent #0AFF64". */
   context: readonly string[];
 };
+
+/** Takes are named "Short name · what makes it different"; the studio shows the two parts apart. */
+export function splitTakeName(name: string): { title: string; note: string | null } {
+  const at = name.indexOf(" · ");
+  return at > 0 ? { title: name.slice(0, at), note: name.slice(at + 3) } : { title: name, note: null };
+}
 
 /**
  * The patch that applies a mix to the draft without a model turn. Locked colors
@@ -83,9 +77,14 @@ export const mixIsEmpty = (mix: Mix) => !mix.colors && !mix.shape && !mix.type;
 export function composeBrief(brief: Brief): string {
   const lines: string[] = [];
   const subject = brief.subject.trim();
-  lines.push(
-    subject ? `Design a Paseo pack inspired by: ${subject}.` : "Design a new Paseo pack from the direction below.",
-  );
+  if (brief.mode === "remix")
+    lines.push(
+      `Remix the pack that is in the draft now${brief.remixName ? `, "${brief.remixName}"` : ""}: keep what makes it recognizable and ${subject ? `change this: ${subject}.` : "give me fresh takes on it."}`,
+    );
+  else
+    lines.push(
+      subject ? `Design a Paseo pack inspired by: ${subject}.` : "Design a new Paseo pack from the direction below.",
+    );
   if (brief.appearance !== "any") lines.push(`Make it a ${brief.appearance} pack.`);
   if (brief.moods.length) lines.push(`Mood: ${brief.moods.join(", ").toLowerCase()}.`);
   const borrowed: string[] = [];
@@ -98,19 +97,18 @@ export function composeBrief(brief: Brief): string {
     borrowed.push(
       `the type and cards of "${brief.mix.type.name}" (${brief.mix.type.ui.fontFamily} ${brief.mix.type.ui.fontSize}px, ${brief.mix.type.ui.toolCards} tool cards)`,
     );
-  if (borrowed.length)
-    lines.push(
-      `I already mixed these into the draft, so keep them unless they fight the idea: ${borrowed.join("; ")}.`,
-    );
+  if (borrowed.length) lines.push(`Borrow ${borrowed.join("; ")}.`);
   if (brief.context.length) lines.push(`I am pointing at: ${brief.context.join("; ")}. Treat these as the focus.`);
   lines.push(
     brief.variants > 1
-      ? `Give me ${brief.variants} clearly different takes. Save each one with create_variant under a short descriptive name, and leave the strongest one in the draft.`
-      : "Apply it to the draft with patch_pack and name the pack after the idea.",
+      ? `Give me ${brief.variants} clearly different takes. Save each one with create_variant, and leave the strongest one in the draft.`
+      : "Save it with create_variant and leave it in the draft.",
   );
-  for (const extra of briefExtras) if (brief.extras.includes(extra.id)) lines.push(extra.prompt);
   lines.push(
-    "Read read_theme first, respect locked colors, and keep text readable. Reply with one short line per take saying what makes it different.",
+    'Name every take "Short name · what makes it different", at most 60 characters, for example "Night swing · alarm red on midnight blue".',
+  );
+  lines.push(
+    "Read read_theme first, respect locked colors, and run check_contrast; fix any text pair under 4.5:1 before you finish. Do not set ui.panel. Keep your chat reply to one short line per take.",
   );
   return lines.join("\n");
 }

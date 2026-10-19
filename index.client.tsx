@@ -58,13 +58,7 @@ export default function contribute(client: PluginClientContext) {
         });
       themeSignature = next;
     }
-    const panel =
-      pack && (pack.ui.activityPanel || pack.ui.panel.enabled)
-        ? {
-            title: pack.ui.panel.enabled ? pack.ui.panel.title : "Pack activity",
-            icon: pack.ui.panel.enabled ? pack.ui.panel.icon : "Activity",
-          }
-        : null;
+    const panel = pack?.ui.activityPanel ? { title: "Pack activity", icon: "Activity" } : null;
     const nextPanel = JSON.stringify(panel);
     if (nextPanel !== panelSignature) {
       void removePanel?.();

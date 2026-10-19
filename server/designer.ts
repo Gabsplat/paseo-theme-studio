@@ -16,7 +16,31 @@ const systemPrompt = `You are the user's persistent Paseo Theme Studio pack desi
 Read read_capabilities to learn supported fields and scope. You can edit pack styles and panels, favorite and reuse saved packs, and write custom React Native TSX components for the task using create_code_component. Every component is custom; there are no pre-made blocks to assemble. It is drawn in the chat exactly as written, with no frame or title around it, so give it a complete, distinctive design of its own. Use list_components before component mutations. Compile generated code with build_components; only the user activates compiled code. Publish a component with publish_component once the user has activated its build. For a quick visual or interactive answer (a chart, comparison, simulator, calculator, or small tool), call show_live with self-contained HTML: it appears in the chat at once on web and desktop, needs no build or activation, and follows the active theme. Component interactions arrive as structured native messages; read_component_instance and update_component_state return your decision to the UI without causing another turn. Use the owning agentId given by the event when publishing related rows. Never treat action names as shell commands. You cannot rewrite Paseo native messages or global layout.
 Read read_theme before each set of edits. Use expectedRevision from that read. On a conflict, read again and adapt to the latest user edits. Never overwrite a locked color. Locked colors apply to all changes. Explain an unavailable edit and ask the user to unlock its color when necessary.
 Use patch_pack for draft palette and UI changes, check_contrast to check readability, create_variant to edit and save a named draft variant, save_pack to save the current draft, load_preset to start from a preset, and undo/redo to navigate draft history. You may lock_color at the user's request, but you cannot unlock a color. Check text against backgrounds and text on accent buttons. Accent foreground in Paseo is derived from the theme background. Tell the user when a requested contrast target remains unmet.
-These tools are the only way to change Theme Studio. Do not edit studio.json, bridge files, the plugin source, the Paseo app, or host configuration. Do not use shell commands or unrelated MCP tools to modify a theme. Keep responses brief and explain concrete visual choices. Preserve the user's manual edits. Never claim a theme is installed, applied, saved, or contrast-compliant unless the tool result confirms it.`;
+You have no use for a shell, file, or web tools: they need the user's approval, the user is usually working in the studio rather than this chat, and the request would stall your work. Use only the theme-studio tools. These tools are the only way to change Theme Studio. Do not edit studio.json, bridge files, the plugin source, the Paseo app, or host configuration. Do not use shell commands or unrelated MCP tools to modify a theme. Keep responses brief and explain concrete visual choices. Preserve the user's manual edits. Never claim a theme is installed, applied, saved, or contrast-compliant unless the tool result confirms it.`;
+
+/**
+ * The model a new designer uses: the user's choice, else the provider's own default from
+ * its live model list, with the deepest reasoning it offers up to "high".
+ */
+export async function resolveDesignerModel(
+  paseo: PluginHandlerContext["paseo"],
+  provider: string,
+  requested?: string,
+): Promise<{ model: string; thinking?: string }> {
+  let models: { id: string; isDefault?: boolean; isSelectable?: boolean; thinkingOptions?: { id: string }[] }[] = [];
+  try {
+    models = ((await paseo.providers.listModels(provider)).models ?? []).filter(item => item.isSelectable !== false);
+  } catch {
+    // An unreachable model list falls back to the provider's default below.
+  }
+  const chosen = requested
+    ? models.find(item => item.id === requested)
+    : (models.find(item => item.isDefault) ?? models[0]);
+  const model = requested || chosen?.id || defaultDesignerModel(provider);
+  const options = chosen?.thinkingOptions?.map(option => option.id) ?? [];
+  const thinking = ["high", "medium"].find(id => options.includes(id));
+  return thinking ? { model, thinking } : { model };
+}
 
 export class Designer {
   private pending: Promise<Session> | null = null;
@@ -123,7 +147,7 @@ export class Designer {
     const session = { agentId: saved?.agentId ?? randomUUID(), workspaceId: workspace.id };
     await this.persistSession(session);
     const provider = input.provider?.trim() || defaultDesignerProvider;
-    const model = input.model?.trim() || defaultDesignerModel(provider);
+    const { model, thinking } = await resolveDesignerModel(paseo, provider, input.model?.trim());
     if (!/^[a-z0-9][a-z0-9._-]*$/i.test(provider) || model.length > 200 || /[\r\n]/.test(model))
       throw new Error("Choose a valid provider and model.");
     const tools = toolDefinitions.map(tool => tool.name);
@@ -137,7 +161,7 @@ export class Designer {
       title: "Theme designer",
       config: {
         provider: `${provider}/${model}`,
-        ...(provider === "codex" ? { thinkingOptionId: "high" } : {}),
+        ...(thinking ? { thinkingOptionId: thinking } : {}),
         systemPrompt: `${systemPrompt}\nYour own Paseo agent ID is ${session.agentId}. Component publications belong to this conversation unless the user explicitly chooses another target.`,
         mcpServers: {
           "theme-studio": {

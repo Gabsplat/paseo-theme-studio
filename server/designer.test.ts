@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { ThemeBridge } from "./bridge";
-import { Designer } from "./designer";
+import { Designer, resolveDesignerModel } from "./designer";
 import { StudioStore } from "./store";
 
 test("designer replaces a reserved orphan ID while preserving its workspace and unrelated refresh errors", async t => {
@@ -96,8 +96,9 @@ test("designer replaces a reserved orphan ID while preserving its workspace and 
   assert.equal(workspaceCreations, 1);
   assert.equal(creations.length, 2);
   assert.equal(creations[1].prompt, undefined);
-  assert.equal(creations[1].config.provider, "codex/gpt-6.1-sol");
-  assert.equal(creations[1].config.thinkingOptionId, "high");
+  // This fake host has no model list, so the provider's own default is used.
+  assert.equal(creations[1].config.provider, "codex/default");
+  assert.equal(creations[1].config.thinkingOptionId, undefined);
   assert.match(creations[1].config.systemPrompt, /Never overwrite a locked color/);
   const args = creations[1].config.mcpServers["theme-studio"].args;
   assert.deepEqual(args.slice(0, 2), [bridge.script, bridge.endpoint]);
@@ -119,4 +120,23 @@ test("designer replaces a reserved orphan ID while preserving its workspace and 
   assert.equal((await store.read()).designerAgentId, fresh.agentId);
   assert.ok(agents.has(first.agentId), "The previous designer chat is kept.");
   assert.deepEqual(await designer.start({}, paseo), fresh);
+});
+
+test("a new designer uses the provider's reported default model and its deepest reasoning up to high", async () => {
+  const listed = {
+    models: [
+      { id: "gpt-5.6-terra", isSelectable: true, thinkingOptions: [{ id: "low" }, { id: "medium" }] },
+      { id: "gpt-6-luna", isDefault: true, thinkingOptions: [{ id: "low" }, { id: "high" }, { id: "xhigh" }] },
+      { id: "retired", isSelectable: false, isDefault: true },
+    ],
+  };
+  const paseo = { providers: { listModels: async () => listed } } as unknown as PluginHandlerContext["paseo"];
+  assert.deepEqual(await resolveDesignerModel(paseo, "codex"), { model: "gpt-6-luna", thinking: "high" });
+  assert.deepEqual(await resolveDesignerModel(paseo, "codex", "gpt-5.6-terra"), {
+    model: "gpt-5.6-terra",
+    thinking: "medium",
+  });
+  const failing = { providers: { listModels: async () => Promise.reject(new Error("offline")) } } as never;
+  assert.deepEqual(await resolveDesignerModel(failing, "claude"), { model: "default" });
+  assert.deepEqual(await resolveDesignerModel(failing, "codex", "gpt-6-luna"), { model: "gpt-6-luna" });
 });

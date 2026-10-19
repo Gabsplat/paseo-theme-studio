@@ -9,7 +9,7 @@ The studio keeps a live, interactive replica of Paseo in the center: its sidebar
 Manual edits and agent tools change the draft without changing the active pack. Saving a named library copy also leaves the active pack unchanged.
 
 1. In **Colors**, edit the eight appearance colors or protect colors with locks. The info button explains each role, the contrast tiles show the four pairs that matter, and **From one color** builds a whole palette from a single color in five harmonies. The sun/moon button switches light and dark.
-2. In **Design**, choose density, corner radius, typography, tool-card style, pack-note style, and workspace panels.
+2. In **Design**, choose density, corner radius, typography, tool-card style, pack-note style, and the activity panel.
 3. Review the preview. The status next to the pack name shows whether the draft is active.
 4. Press **Activate** to copy the draft into the active pack. Its registered extensions update, and its global palette updates when **Theme Studio · Live** is selected.
 
@@ -17,21 +17,31 @@ In **Packs**, **Revert** restores the previous active pack and **Disable** turns
 
 Presets, named library copies, and JSON import/export retain the pack's palette and UI settings. Presets and imported or loaded packs preserve locked color values. Manual and agent patches cannot change locked colors, and undo/redo refuses a change that would alter one. Revision checks prevent concurrent manual and agent edits from silently overwriting each other.
 
-## Create from an idea
+## Create with the designer
 
-**Create** is the first inspector tab. Write an idea ("Spider-Man, comic ink"), pick moods, choose light or dark, and choose how many takes you want.
+**Create** is the first inspector tab. Its composer stays fixed at the bottom, so the brief and its button are always in reach; the area above shows where to start, then the designer's takes.
 
-Under the idea, **Spark** uses a small, fast model for instant help. Pause on an idea (or press **Spark it**) and it returns the idea finished as a one-sentence brief, a few short additions to tap, moods that fit, and three looks painted as miniatures; tapping a look applies its colors to the draft at once, with locked colors kept. **Surprise me** drops in a random idea and sparks it. **Live** turns the automatic answer on pause on or off. The model name beside it opens the **Quick model** picker, which lists the models of every provider available on the host and marks the fast ones; until you pick, Theme Studio uses a small model it finds (for example Haiku or Luna). Each answer is one short turn on that provider, run by a helper agent named "Theme spark" with no tools, beside the designer. Its palettes are checked and their text and accent adjusted until they are readable. The first answer takes longer while the helper starts; later ones take a few seconds.
+On the first screen, choose **Remix this theme** to start from the pack in the draft, or **Start from an idea**, or pick one of the suggested ideas. The composer leads with a **New / Remix** switch, so it is always clear whether the designer starts from scratch or from the draft. Below the text, compact pills open their options only when pressed:
 
-**Take from** borrows parts of packs you already have: colors from one, shape and density from another, type and tool cards from a third. **Mix into draft** applies that at once, without an agent; locked colors stay, and undo brings the previous look back.
+- **Mood**: one or more moods.
+- **Light or dark**: cycles between either, dark, and light.
+- **Mix**: borrow colors, shape and density, or type and cards from packs you already have. **Mix into draft now** applies that at once without the designer, keeping locked colors; otherwise the designer uses it.
+- **Point**: point at parts of the preview (sidebar, messages, tool card, composer), any of the eight colors, or the card selected in **Cards**. What you pick appears as chips in the composer and becomes the focus of the brief. Hovering an option makes it blink in the preview.
+- **Takes**: how many takes to ask for, one to four.
 
-**Send to designer** sends the composed brief to the designer's chat, starting the designer if there is none, and you stay in the studio. The designer edits the same draft, so changes appear in the preview as it works; the top bar shows its real status. When you ask for more than one take, each is saved as a pack and listed under the brief: tap one to load it into the draft, or discard it. **Show brief** displays the exact message before you send it.
+**Create** (or **Remix**) sends the brief to the designer's chat, starting the designer if there is none; Enter sends too. You stay in the studio: the brief appears above, the requested takes appear as placeholders, and each one fills in as the designer saves it with `create_variant`. The designer names takes "Short name · what makes it different", and Create shows the two parts apart. Tap a take to load it into the draft, **Remix** it to keep iterating from it, or discard it. Takes stay in Create and out of your library: the one you **Activate** is the one that joins My packs, marked "In My packs" on its card. **Save pack** still saves any draft explicitly. **Brief** shows the exact message that will be sent, and the chat icon opens the designer's conversation.
 
-Below the preview, **Point at** selects what a note is about: parts of the preview, any of the eight color swatches, or the card selected in **Cards**. Add a line and press **Send note**; the designer receives the note together with what you pointed at. The tray is hidden beside the designer's chat, where the chat itself does this.
+When the designer asks for a permission, such as running a command or reading a file, a bar appears at the top of the studio, whatever tab you are on, with what it wants to do and **Allow** / **Deny** (or the provider's own choices). You answer there; there is no need to open its chat. The designer is told to use only Theme Studio tools, and the studio documents it reads are kept compact so a provider never has to save them to a file and ask to read it back.
+
+If the designer stops with an error, Create says so and offers **New designer**, which starts a fresh session in place without leaving the studio.
+
+## See where a color paints
+
+Hover any of the eight swatches under the preview, or a row in **Colors**, and that color blinks in the preview between its value and a vivid contrast color, so every place it paints, including the surfaces Paseo derives from it, stands out. On touch screens, hold the swatch or the row's eye button. The same happens when you hover an option in the composer's **Point** menu.
 
 ## Save, favorite, and reuse packs
 
-**Save pack** stores a named copy of the full draft, including its palette and UI settings. In **Packs → Your library**, star a saved pack to mark it as a favorite. **Favorites only** filters the library to those packs. Unstarring changes the favorite list without changing the draft or active pack.
+**Save pack** stores a named copy of the full draft, including its palette and UI settings. In **Packs → My packs**, star a saved pack to mark it as a favorite; the star button beside the section title shows only favorites. My packs lists your saved packs and the takes you activated, newest first, and Starting packs holds the 60 presets. Both sections fold away from their headers, and the search box above filters both by name or author. Unstarring changes the favorite list without changing the draft or active pack.
 
 Loading a saved pack reuses it as a draft and preserves locked colors. Review it, make any changes, and press **Activate** when ready. Loading or favoriting a pack does not activate it. Removing a saved pack also removes its favorite flag.
 
@@ -49,7 +59,7 @@ The first time Theme Studio opens on a host, a short visual tour explains the wo
 
 Theme Studio remembers whether you left the designer open. On desktop, the first time you open Theme Studio in an app session it returns to the designer chat with the studio beside it; later visits stay in the studio. Phones never redirect, because the chat fills the screen. **Close designer** in the studio panel, or **Studio** in the designer chat's header, goes back to the full studio and keeps it there next time. The preference is stored in `preferences.json`, separately from your packs.
 
-The **Designer** inspector tab shows the current session's provider, model, reasoning level, and status. A session keeps its model for its whole life. To use another one, choose a provider (Codex, Claude Code, or OpenCode) and optionally a model, then press **Start new session**: Theme Studio creates a new designer in the same workspace and opens it, and the previous chat stays there. Your choice is saved in `preferences.json` for the next session. Without a choice, the designer uses Codex `gpt-6.1-sol` with high reasoning. Creating a designer sends no prompt.
+The **Designer** inspector tab shows the current session's provider, model, reasoning level, and status. A session keeps its model for its whole life. To use another one, choose a provider (Codex, Claude Code, or OpenCode) and optionally a model, then press **Start new session**: Theme Studio creates a new designer in the same workspace and opens it, and the previous chat stays there. Your choice is saved in `preferences.json` for the next session. Without a choice, the designer uses Codex with the model Codex reports as its default for your account, at high reasoning when that model offers it. Creating a designer sends no prompt.
 
 The same tab lists example prompts you can copy and holds **Connect your agents**, which gives other new agents the Theme Studio tools.
 
@@ -186,14 +196,9 @@ Density, corner radius, font family, and font size apply to pack-owned component
 
 Tool-card styles affect supported completed shell and plain-text tool rows. The renderer preserves command and output text. Running, failed, canceled, permission-sensitive, unsupported, and oversized rows retain Paseo's native rendering and actions.
 
-The activity panel reads native workspace status and diff counts. A custom workspace panel uses a title, an allowed icon, and strictly validated blocks:
+The activity panel reads native workspace status and diff counts. Earlier versions also offered a custom workspace panel built from text, stat, list, and progress blocks; it is retired. Packs that contain one still load, but the panel is no longer shown or offered to agents.
 
-- `text` for a note.
-- `stat` for a label and value.
-- `list` for a title and text items.
-- `progress` for a label and a value between 0 and 100.
-
-The pack panel builder stores declarative data. It accepts no scripts, HTML, CSS, or custom event handlers. Interactive custom components use the separate component library. Packs and components do not modify Paseo core files. Native animations, semantic status colors, syntax highlighting, terminal ANSI colors, and global layout remain controlled by Paseo.
+Interactive custom components use the separate component library. Packs and components do not modify Paseo core files. Native animations, semantic status colors, syntax highlighting, terminal ANSI colors, and global layout remain controlled by Paseo.
 
 The preview uses representative content and the public theme mappings from Paseo 0.9.2. Platform fonts, window sizes, and later Paseo versions can change its visual match.
 
@@ -205,7 +210,7 @@ Open **Export** and choose **Export plugin** to generate an independent plugin f
 paseo plugin install '/absolute/path/to/exported-pack'
 ```
 
-Export does not install or activate the generated plugin. Run the displayed command when you are ready, then choose the exported pack's own theme in **Settings → Appearance**. Its workspace panels and tool-card extensions run independently of Theme Studio.
+Export does not install or activate the generated plugin. Run the displayed command when you are ready, then choose the exported pack's own theme in **Settings → Appearance**. Its activity panel and tool-card extensions run independently of Theme Studio.
 
 Exports contain no designer conversation, credentials, bridge token, or mutable Theme Studio state. Generated sources remain available if typechecking fails, and no install command is presented as a successful export.
 

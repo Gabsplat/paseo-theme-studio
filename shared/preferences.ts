@@ -10,13 +10,17 @@ const fields = {
   designerModel: z.string().trim().max(200),
   /** Whether the first-run onboarding was completed or skipped. */
   onboardingDone: z.boolean(),
-  /** The quick model behind instant ideas and looks; empty means the suggested one. */
-  sparkProvider: z.string().trim().max(60),
-  sparkModel: z.string().trim().max(200),
-  /** Whether ideas and looks refresh on their own while the user types. */
-  sparkLive: z.boolean(),
   /** Saved pack ids when the last brief was sent; packs saved since are the designer's takes. */
   takeBaseline: z.array(z.string()),
+  /** What the last brief asked for, so Create can show it and its pending takes after a reload. */
+  lastBrief: z
+    .object({
+      summary: z.string().max(400),
+      variants: z.number().int().min(1).max(4),
+      mode: z.enum(["new", "remix"]),
+      at: z.string().max(40),
+    })
+    .strict(),
 };
 export const studioPreferencesSchema = z.object({
   designerOpen: fields.designerOpen.default(false),
@@ -24,9 +28,7 @@ export const studioPreferencesSchema = z.object({
   designerModel: fields.designerModel.optional(),
   onboardingDone: fields.onboardingDone.default(false),
   takeBaseline: fields.takeBaseline.optional(),
-  sparkProvider: fields.sparkProvider.optional(),
-  sparkModel: fields.sparkModel.optional(),
-  sparkLive: fields.sparkLive.default(true),
+  lastBrief: fields.lastBrief.optional(),
 });
 // No defaults here: a patch must only carry the fields it changes.
 export const studioPreferencesPatchSchema = z.object(fields).partial().strict();

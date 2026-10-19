@@ -2,7 +2,7 @@
 
 Theme Studio is a design workspace for how Paseo looks. It opens from the sidebar and shows a working replica of Paseo (sidebar, chat, tool rows, terminal, and composer, on desktop and mobile) that repaints as you edit. You change a draft, check it in the preview, and press Activate when you like it. Revert brings back the previous look.
 
-A design is saved as a pack: the eight appearance colors, plus density, corner radius, fonts, the style of completed shell tool cards, and optional workspace panels built from text, stats, lists, and progress bars. There are 60 starting palettes. Five ship with the plugin and 55 are adapted from the T3 Themes community gallery, each shown with its author's name. Locks protect colors you want to keep, and a contrast summary flags text that would be hard to read.
+A design is saved as a pack: the eight appearance colors, plus density, corner radius, fonts, the style of completed shell tool cards, and an optional activity panel. There are 60 starting palettes. Five ship with the plugin and 55 are adapted from the T3 Themes community gallery, each shown with its author's name. Locks protect colors you want to keep, and a contrast summary flags text that would be hard to read.
 
 ## Setup
 

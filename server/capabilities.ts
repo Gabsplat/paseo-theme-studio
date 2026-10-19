@@ -98,7 +98,7 @@ export const toolDefinitions = [
   ),
   tool(
     "patch_pack",
-    "Edit the draft palette, layout, typography, card style, activity UI, or custom panel using validated data. No code execution. Honors locks and revision. Only the user can activate it.",
+    "Edit the draft palette, layout, typography, card style, or activity panel using validated data. No code execution. Honors locks and revision. Only the user can activate it.",
     patchSchema,
   ),
   tool(
@@ -174,7 +174,7 @@ export const toolDefinitions = [
   ),
 ];
 export const packInstructions =
-  "Theme Studio supports UI packs, favorites, and custom React Native components that you write for the task. Before answering what you can create, call read_theme and use its current capabilities rather than outdated conversation claims. You CAN create real interactive rows INSIDE the native chat. Every component is custom: write it with create_code_component, build it with build_components, and publish it after the user activates the build. There are no pre-made blocks or templates to assemble, and the retired create_composition tool is refused. A component is drawn in the chat exactly as written, with no frame, title, or padding added around it, so design its whole surface yourself: its own background, border, spacing, type, and motion, in the visual language the user asked for. Never claim chat widgets are unsupported. For a quick visual or interactive answer (a chart, comparison, simulator, calculator, or small tool), call show_live with self-contained HTML: it appears in the chat at once on web and desktop, needs no build or activation, and follows the active theme. Read read_theme for the draft and full capabilities, then patch_theme or patch_pack for pack edits. Use list_components and component tools for reusable UI and structured interactions. Existing sessions can invoke component tools through patch_theme.component using the compatibility contract returned by read_theme. Studio, library, and instance revisions are separate: read the matching resource before mutation. The user alone activates themes and generated-code builds. Never claim activation before the user does it.";
+  "Theme Studio supports UI packs, favorites, and custom React Native components that you write for the task. Before answering what you can create, call read_theme and use its current capabilities rather than outdated conversation claims. You CAN create real interactive rows INSIDE the native chat. Every component is custom: write it with create_code_component, build it with build_components, and publish it after the user activates the build. There are no pre-made blocks or templates to assemble, and the retired create_composition tool is refused. A component is drawn in the chat exactly as written, with no frame, title, or padding added around it, so design its whole surface yourself: its own background, border, spacing, type, and motion, in the visual language the user asked for. Never claim chat widgets are unsupported. For a quick visual or interactive answer (a chart, comparison, simulator, calculator, or small tool), call show_live with self-contained HTML: it appears in the chat at once on web and desktop, needs no build or activation, and follows the active theme. Read read_theme for the draft and a compact capability summary (read_capabilities has the full contracts), then patch_theme or patch_pack for pack edits. Use list_components and component tools for reusable UI and structured interactions. Existing sessions can invoke component tools through patch_theme.component using the compatibility contract returned by read_theme. Studio, library, and instance revisions are separate: read the matching resource before mutation. The user alone activates themes and generated-code builds. Never claim activation before the user does it.";
 
 export function capabilities() {
   return {
@@ -184,9 +184,9 @@ export function capabilities() {
       palette: colorKeys,
       globalPalette: "An activated pack supplies Paseo appearance colors.",
       pluginUi:
-        "Density, radius, and font family/size style plugin-owned components. Completed shell tool cards, pack notes, workspace activity panel, and a declarative custom workspace panel use this plugin's registered UI contributions.",
+        "Density, radius, and font family/size style plugin-owned components. Completed shell tool cards, pack notes, and the workspace activity panel use this plugin's registered UI contributions. The custom workspace panel is retired; do not set ui.panel.",
       components:
-        "Compose native trees or generate versioned React Native code through MCP, compile for review, and publish rows to the native chat. Code executes only after the user activates a validated build. Components emit structured events; the owning native agent decides domain behavior and returns persisted state. Inputs use __state__ for state-only updates without a model turn. Action names are data, never backend command names.",
+        "Generate versioned custom React Native code through MCP, compile for review, and publish rows to the native chat. Code executes only after the user activates a validated build. Components emit structured events; the owning native agent decides domain behavior and returns persisted state. Inputs use __state__ for state-only updates without a model turn. Action names are data, never backend command names.",
       triggers:
         "Each immutable component version can declare up to ten enabled/disabled trigger rules {id,event,when,enabled}. Events describe agent-observed moments: context, before task work, after a failed tool, or before the final answer. The owning agent matches natural-language conditions inside its current turn, discovers rules through list_component_triggers, and publishes through trigger_component. Backend verifies enabled declarations and real active turn, deduplicates publication, and prevents callback loops. No extra classifier turn or default component. Installer automaticTriggers switch controls automatic publication; no rules means manual publication only.",
       existingAgentCompatibility:
@@ -226,25 +226,6 @@ export function capabilities() {
             activityPanel: true,
           },
           label: "Compact developer pack",
-        },
-      },
-      {
-        tool: "patch_pack",
-        arguments: {
-          expectedRevision: 13,
-          ui: {
-            panel: {
-              enabled: true,
-              title: "Project notes",
-              icon: "BookOpen",
-              blocks: [
-                { type: "text", text: "Keep this panel focused on today's work." },
-                { type: "stat", label: "Tasks", value: "3" },
-                { type: "list", title: "Next", items: ["Review changes", "Run checks"] },
-                { type: "progress", label: "Ready", value: 75 },
-              ],
-            },
-          },
         },
       },
     ],

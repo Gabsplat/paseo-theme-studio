@@ -167,78 +167,6 @@ export function PackNote({ theme, pack, text }: { theme: PluginTheme; pack: Stud
   );
 }
 
-export function RecipePanel({ theme, pack }: { theme: PluginTheme; pack: StudioTheme }) {
-  if (!pack.ui.panel.enabled) return null;
-  const c = theme.colors;
-  const m = packMetrics(pack.ui);
-  const typography = {
-    color: c.foreground,
-    fontFamily: m.fontFamily,
-    fontSize: m.fontSize,
-    lineHeight: m.fontSize + 6,
-  };
-  return (
-    <View
-      style={{
-        backgroundColor: c.surface1,
-        borderColor: c.border,
-        borderWidth: 1,
-        borderRadius: m.radius,
-        padding: m.padding,
-        gap: m.gap,
-      }}
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: m.gap }}>
-        <Icon name={pack.ui.panel.icon} size={16} color={c.accent} />
-        <Text style={[typography, { fontWeight: "600", flexShrink: 1 }]}>{pack.ui.panel.title}</Text>
-      </View>
-      {pack.ui.panel.blocks.map((block, index) => {
-        if (block.type === "text") return <PackNote key={index} theme={theme} pack={pack} text={block.text} />;
-        if (block.type === "stat")
-          return (
-            <View key={index} style={{ flexDirection: "row", alignItems: "baseline", gap: m.gap }}>
-              <Text style={[typography, { color: c.foregroundMuted, flex: 1 }]}>{block.label}</Text>
-              <Text style={[typography, { fontWeight: "600", flexShrink: 1 }]}>{block.value}</Text>
-            </View>
-          );
-        if (block.type === "list")
-          return (
-            <View key={index} style={{ gap: m.gap / 2 }}>
-              <Text style={[typography, { color: c.foregroundMuted }]}>{block.title}</Text>
-              {block.items.map((item, itemIndex) => (
-                <View key={itemIndex} style={{ flexDirection: "row", gap: m.gap }}>
-                  <Text style={[typography, { color: c.foregroundMuted }]}>·</Text>
-                  <Text style={[typography, { flex: 1 }]}>{item}</Text>
-                </View>
-              ))}
-            </View>
-          );
-        return (
-          <View key={index} style={{ gap: m.gap / 2 }}>
-            <View style={{ flexDirection: "row", gap: m.gap }}>
-              <Text style={[typography, { flex: 1 }]}>{block.label}</Text>
-              <Text style={[typography, { color: c.foregroundMuted }]}>{block.value}%</Text>
-            </View>
-            <View
-              accessibilityRole="progressbar"
-              accessibilityLabel={block.label}
-              accessibilityValue={{ min: 0, max: 100, now: block.value }}
-              style={{
-                height: 6,
-                backgroundColor: c.surface2,
-                borderRadius: Math.min(m.radius, 3),
-                overflow: "hidden",
-              }}
-            >
-              <View style={{ height: 6, width: `${block.value}%`, backgroundColor: c.accent }} />
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
 function AgentActivity({ theme, pack, agentId }: { theme: PluginTheme; pack: StudioTheme; agentId: string }) {
   const agent = useAgent(agentId, ({ title, status, requiresAttention, attentionReason, model }) => ({
     title,
@@ -342,7 +270,6 @@ export function PackActivity({
           {agentId && <AgentActivity theme={theme} pack={pack} agentId={agentId} />}
         </View>
       )}
-      <RecipePanel theme={theme} pack={pack} />
     </ScrollView>
   );
 }

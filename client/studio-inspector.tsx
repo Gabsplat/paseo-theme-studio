@@ -27,12 +27,15 @@ function ColorField({
   showHint,
   onCommit,
   onLock,
+  onHighlight,
 }: {
   theme: PluginTheme;
   document: StudioDocument;
   colorKey: ColorKey;
   busy: boolean;
   showHint: boolean;
+  /** Points at this role, so the preview blinks wherever it paints. */
+  onHighlight: (key: ColorKey | null) => void;
   onCommit: (key: ColorKey, color: string, expectedRevision: number) => Promise<void>;
   onLock: (key: ColorKey, locked: boolean) => void;
 }) {
@@ -109,7 +112,15 @@ function ColorField({
   );
 
   return (
-    <View onLayout={event => setFieldWidth(event.nativeEvent.layout.width)} style={{ gap: 6, paddingVertical: 7 }}>
+    <Pressable
+      // Hovering a row (or holding its eye) shows everywhere this color paints in the preview.
+      onHoverIn={() => onHighlight(colorKey)}
+      onHoverOut={() => onHighlight(null)}
+      accessible={false}
+      focusable={false}
+      onLayout={event => setFieldWidth(event.nativeEvent.layout.width)}
+      style={{ gap: 6, paddingVertical: 7 }}
+    >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
         <Pressable
           testID={`swatch-${colorKey}`}
@@ -137,6 +148,15 @@ function ColorField({
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>{colorKey}</Text>
         </View>
         {!narrow ? input : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Show where ${colorLabels[colorKey].toLowerCase()} is used`}
+          onPressIn={() => onHighlight(colorKey)}
+          onPressOut={() => onHighlight(null)}
+          style={{ padding: 8, borderRadius: 6 }}
+        >
+          <Icon name="Eye" size={14} color={theme.colors.foregroundMuted} />
+        </Pressable>
         <Pressable
           testID={`lock-${colorKey}`}
           accessibilityRole="button"
@@ -183,7 +203,7 @@ function ColorField({
           await onCommit(colorKey, color, pickerRevision);
         }}
       />
-    </View>
+    </Pressable>
   );
 }
 
@@ -399,6 +419,7 @@ export function PaletteInspector(props: {
   onCommit: (key: ColorKey, color: string, expectedRevision: number) => Promise<void>;
   onLock: (key: ColorKey, locked: boolean) => void;
   onApplyPalette: (colors: Partial<Palette>, label: string) => void;
+  onHighlight: (key: ColorKey | null) => void;
 }) {
   const [showHints, setShowHints] = useState(false);
   const { onApplyPalette, ...field } = props;

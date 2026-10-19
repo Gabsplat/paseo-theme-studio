@@ -16,14 +16,12 @@ import { AgentConnectionStore } from "./server/agent-connection";
 import { AgentOwners, ownerTokenEnvironment } from "./server/agent-owners";
 import { componentTriggerCatalog } from "./server/component-triggers";
 import { assertComponentTarget, assertCustomComponent, customOnlyMessage } from "./server/component-access";
-import { pruneMissingAgents } from "./server/maintenance";
+import { pruneMissingAgents, retireSparkHelper } from "./server/maintenance";
 import { cliPath, resolvePaseoCli } from "./server/paseo-cli";
 import { readAgentConnection, changeAgentConnection, readAgentMcpSetup } from "./shared/agent-connection";
 import * as components from "./shared/component-rpc";
 import { changeStudioPreferences, readStudioPreferences } from "./shared/preferences";
 import { PreferencesStore } from "./server/preferences";
-import { Spark } from "./server/spark";
-import { readSparkModels, runSpark } from "./shared/spark";
 import { liveInputSchema } from "./shared/live";
 import type { ComponentLibrary } from "./shared/components";
 import { z } from "zod";
@@ -38,7 +36,14 @@ export default function contribute(server: PluginServerContext) {
   const owners = new AgentOwners(directory);
   const componentService = new ComponentService(directory);
   const controller = new ComponentController(componentService, store);
-  const bind = (context: PluginHandlerContext) => controller.bind(context.paseo);
+  let retiredSpark = false;
+  const bind = (context: PluginHandlerContext) => {
+    controller.bind(context.paseo);
+    if (!retiredSpark) {
+      retiredSpark = true;
+      void retireSparkHelper(directory, context.paseo);
+    }
+  };
   // Clients get the catalog, per-component totals, and the cards the user interacted with.
   const view = async (library: ComponentLibrary) =>
     componentService.view(library, await componentService.interactedInstances());
@@ -115,7 +120,6 @@ export default function contribute(server: PluginServerContext) {
     }
   });
   const designer = new Designer(store, bridge);
-  const spark = new Spark(store, preferences);
   const removeCreateHook = server.before("agent.create", async ({ request }, context) => {
     let enabled = false;
     try {
@@ -216,20 +220,16 @@ export default function contribute(server: PluginServerContext) {
     const refreshed = await agent.refresh();
     if (!refreshed) throw new Error("The designer could not be reached. Start a new designer session.");
     if (refreshed.agent.providerUnavailable) throw new Error("The designer's provider is unavailable.");
+    if (agent.status === "error" || agent.status === "closed")
+      throw new Error(
+        `The designer stopped${agent.lastError ? `: ${String(agent.lastError).slice(0, 200)}` : ""}. Start a new designer session to continue.`,
+      );
     if (agent.status === "running" || agent.activeTurn)
       throw new Error("The designer is still working on the previous request. Send this when it finishes.");
     if ((agent.pendingPermissions?.length ?? 0) > 0)
       throw new Error("The designer is waiting for a permission. Answer it in its chat first.");
     await agent.send(text);
     return started;
-  });
-  server.handle(readSparkModels, (_, context) => {
-    bind(context);
-    return spark.listModels(context.paseo);
-  });
-  server.handle(runSpark, (input, context) => {
-    bind(context);
-    return spark.ask(input, context.paseo);
   });
   server.handle(components.readComponentLibrary, async (_, context) => {
     bind(context);
@@ -352,7 +352,6 @@ export default function contribute(server: PluginServerContext) {
     await controller.close();
     await componentService.close();
     await designer.close();
-    await spark.close();
     await bridge.close();
     await store.close();
   };

@@ -412,7 +412,7 @@ export function PaseoMobilePreview({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [session, setSession] = useState("Navigation review");
-  const hasPanel = theme.ui.activityPanel || theme.ui.panel.enabled;
+  const hasPanel = theme.ui.activityPanel;
   const showPanel = hasPanel && panelOpen;
   return (
     <View
@@ -440,9 +440,9 @@ export function PaseoMobilePreview({
           />
           <View style={[s.sheet, { backgroundColor: c.workspace, borderLeftColor: c.border }]}>
             <View style={[s.agentRow, { borderBottomColor: c.border }]}>
-              <Glyph name={theme.ui.panel.enabled ? theme.ui.panel.icon : "Activity"} c={c} size={13} />
+              <Glyph name={"Activity"} c={c} size={13} />
               <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 12, flex: 1 }}>
-                {theme.ui.panel.enabled ? theme.ui.panel.title : "Pack activity"}
+                {"Pack activity"}
               </Text>
               <IconButton c={c} name="X" label="Close pack panel" onPress={() => setPanelOpen(false)} />
             </View>

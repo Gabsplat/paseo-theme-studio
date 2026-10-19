@@ -32,6 +32,9 @@ function validateDocument(value: unknown): StudioDocument {
   return document;
 }
 
+/** Takes kept for Create; older ones are dropped. */
+const maxTakes = 24;
+
 function migrateDocument(value: unknown): StudioDocument {
   if (!value || typeof value !== "object" || Array.isArray(value)) return validateDocument(value);
   const raw = value as Record<string, unknown>;
@@ -98,6 +101,9 @@ function applyAction(
     case "activate":
       next.previousActive = clone(next.active);
       next.active = clone(next.current);
+      // Activating one of the designer's takes is what keeps it: it joins the library.
+      if (next.takes.some(take => take.id === next.current.id) && !next.saved.some(pack => pack.id === next.current.id))
+        next.saved.push(clone(next.current));
       break;
     case "revert-active": {
       if (!next.previousActive) throw new Error("No previous active pack is available.");
@@ -122,7 +128,7 @@ function applyAction(
       const selected =
         action.type === "import"
           ? action.theme
-          : (action.type === "preset" ? presets : next.saved).find(theme => theme.id === action.id);
+          : (action.type === "preset" ? presets : [...next.saved, ...next.takes]).find(theme => theme.id === action.id);
       if (!selected) throw new Error("Theme was not found.");
       const theme = respectLocks(next, selected);
       appendHistory(next, theme, `Loaded ${theme.name}`, action.type === "preset" ? "preset" : source);
@@ -153,6 +159,11 @@ function applyAction(
       if (!next.saved.some(theme => theme.id === action.id)) throw new Error("Saved theme was not found.");
       next.saved = next.saved.filter(theme => theme.id !== action.id);
       next.favorites = next.favorites.filter(id => id !== action.id);
+      break;
+    }
+    case "discard-take": {
+      if (!next.takes.some(theme => theme.id === action.id)) throw new Error("Take was not found.");
+      next.takes = next.takes.filter(theme => theme.id !== action.id);
       break;
     }
     case "favorite":
@@ -249,7 +260,8 @@ export class StudioStore {
       const next = applyAction(document, patch, "agent");
       next.current.id = randomUUID();
       next.history[next.cursor].theme = clone(next.current);
-      next.saved.push(clone(next.current));
+      // Takes wait outside the library until the user activates one; old ones fall off.
+      next.takes = [...next.takes, clone(next.current)].slice(-maxTakes);
       next.baseline = clone(next.current);
       return next;
     });

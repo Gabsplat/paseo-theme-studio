@@ -1,3 +1,6 @@
+import { readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { AgentOwners } from "./agent-owners";
 import type { ComponentController } from "./component-controller";
 import type { ComponentService } from "./components";
@@ -23,4 +26,23 @@ export async function pruneMissingAgents(
       removed++;
     }
   return { instances, bindings: removed };
+}
+
+/**
+ * Theme Studio 0.7.0 ran quick ideas through a helper agent named "Theme spark". The
+ * feature is gone, so a helper left behind is archived and its record removed.
+ */
+export async function retireSparkHelper(directory: string, paseo: PluginHandlerContext["paseo"]): Promise<void> {
+  const file = join(directory, "spark.json");
+  try {
+    const { agentId } = JSON.parse(await readFile(file, "utf8")) as { agentId?: unknown };
+    if (typeof agentId === "string")
+      await paseo.agents
+        .ref(agentId)
+        .archive()
+        .catch(() => {});
+  } catch {
+    return;
+  }
+  await rm(file, { force: true });
 }

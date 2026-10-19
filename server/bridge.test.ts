@@ -506,7 +506,10 @@ test("real stdio MCP tools share state and reconnect after bridge restart", asyn
     arguments: { expectedRevision: draft.revision, name: "Saved UI pack" },
   });
   const savedPack = JSON.parse(saved.result.content[0].text);
-  assert.equal(savedPack.saved.at(-1).ui.toolCards, "bordered");
+  // Agents get a compact document: saved packs are summaries; full packs come from list_saved_packs.
+  assert.equal(savedPack.saved.at(-1).name, "Saved UI pack");
+  assert.equal("ui" in savedPack.saved.at(-1), false);
+  assert.equal(JSON.stringify(savedPack).length < 30000, true);
   assert.deepEqual(savedPack.active, activeBefore);
   const illegal = await rpc("tools/call", { name: "activate", arguments: { expectedRevision: savedPack.revision } });
   assert.equal(illegal.result.isError, true);

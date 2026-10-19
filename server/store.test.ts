@@ -84,21 +84,36 @@ test("undo survives restart and new edits discard the redo branch", async t => {
   assert.equal(document.history[1].source, "agent");
 });
 
-test("saved variants commit once, remain independent, and survive restart", async t => {
+test("variants become takes outside the library, and only the activated take joins it", async t => {
   const store = await fixture(t);
   const initial = await store.read();
-  const variant = await store.variant(initial.revision, {
-    type: "patch",
-    name: "Variant",
-    colors: { accent: "#123456" },
-  });
-  assert.equal(variant.revision, initial.revision + 1);
-  assert.equal(variant.saved.length, 1);
-  assert.deepEqual(variant.baseline, variant.current);
-  const updated = await store.change(variant.revision, { type: "patch", colors: { accent: "#FEDCBA" } });
-  assert.equal(updated.saved[0].colors.accent, "#123456");
-  assert.equal(updated.baseline.colors.accent, "#123456");
-  assert.deepEqual((await new StudioStore(store.directory).read()).saved, updated.saved);
+  const first = await store.variant(initial.revision, { type: "patch", name: "First", colors: { accent: "#123456" } });
+  const second = await store.variant(first.revision, { type: "patch", name: "Second", colors: { accent: "#654321" } });
+  assert.equal(second.revision, initial.revision + 2);
+  assert.equal(second.saved.length, 0);
+  assert.deepEqual(
+    second.takes.map(take => take.name),
+    ["First", "Second"],
+  );
+  assert.deepEqual(second.baseline, second.current);
+  const updated = await store.change(second.revision, { type: "patch", colors: { accent: "#FEDCBA" } });
+  assert.equal(updated.takes[1].colors.accent, "#654321");
+  assert.deepEqual((await new StudioStore(store.directory).read()).takes, updated.takes);
+  // Loading the first take and activating it saves that one, as edited, and nothing else.
+  const loaded = await store.change(updated.revision, { type: "load", id: second.takes[0].id });
+  const active = await store.change(loaded.revision, { type: "activate" });
+  assert.deepEqual(
+    active.saved.map(pack => pack.name),
+    ["First"],
+  );
+  const again = await store.change(active.revision, { type: "activate" });
+  assert.equal(again.saved.length, 1);
+  const discarded = await store.change(again.revision, { type: "discard-take", id: second.takes[1].id });
+  assert.deepEqual(
+    discarded.takes.map(take => take.name),
+    ["First"],
+  );
+  assert.equal(discarded.saved.length, 1);
 });
 
 test("invalid persisted documents are preserved rather than reset", async t => {
