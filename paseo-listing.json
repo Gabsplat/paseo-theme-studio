@@ -1,11 +1,11 @@
 {
   "name": "Theme Studio",
   "media": [
-    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.0/images/studio.png",
-    "https://cdn.jsdelivr.net/gh/Gabsplat/paseo-theme-studio@v0.8.0/media/theme-studio-demo.mp4",
-    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.0/images/packs.png",
-    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.0/images/design.png",
-    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.0/images/mobile.png",
-    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.0/images/component.png"
+    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.1/images/studio.png",
+    "https://cdn.jsdelivr.net/gh/Gabsplat/paseo-theme-studio@v0.8.1/media/theme-studio-demo.mp4",
+    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.1/images/packs.png",
+    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.1/images/design.png",
+    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.1/images/mobile.png",
+    "https://raw.githubusercontent.com/Gabsplat/paseo-theme-studio/v0.8.1/images/component.png"
   ]
 }

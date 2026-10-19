@@ -15,7 +15,7 @@ const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
 function entry(): string {
   return `import type { PluginClientContext, PluginSurfaceProps, PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { ScrollView, Text, View } from "react-native";
-import { RecipePanel, PackActivity, registerPackExtensions } from "./client/pack-runtime";
+import { PackActivity, registerPackExtensions } from "./client/pack-runtime";
 import { pack } from "./client/pack";
 export default function contribute(client: PluginClientContext) {
   client.addTheme({ id: "pack", name: pack.name, appearance: pack.appearance, colors: pack.colors });
@@ -23,8 +23,7 @@ export default function contribute(client: PluginClientContext) {
   function Overview({ theme }: PluginSurfaceProps) {
     return <ScrollView style={{flex:1,backgroundColor:theme.colors.surface0}} contentContainerStyle={{padding:24,gap:16}}>
       <Text style={{color:theme.colors.foreground,fontSize:20,fontWeight:"600"}}>{pack.name}</Text>
-      <Text style={{color:theme.colors.foregroundMuted,fontSize:13,lineHeight:20}}>Select this pack in Settings → Appearance for its palette. Its registered extensions style completed text tools and its own panels. Native Paseo fonts and layout stay in your app settings.</Text>
-      <RecipePanel theme={theme} pack={pack}/>
+      <Text style={{color:theme.colors.foregroundMuted,fontSize:13,lineHeight:20}}>Select this pack in Settings → Appearance for its palette. Its registered extensions style completed text tools and its activity panel. Native Paseo fonts and layout stay in your app settings.</Text>
     </ScrollView>;
   }
   client.addSurface("overview", Overview);
